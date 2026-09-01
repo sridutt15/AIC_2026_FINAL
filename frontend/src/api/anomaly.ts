@@ -1,3 +1,4 @@
+import { authFetch } from './authClient'
 import { API_BASE_URL } from './health'
 import { withPersona } from './persona'
 import type { AnomalyResponse } from '../types'
@@ -11,7 +12,7 @@ export async function getAnomalies(
   let query = refresh ? '?refresh=true' : ''
   query = withPersona(query, personaId)
   const url = `${API_BASE_URL}/anomaly/${kpiId}${query}`
-  const response = await fetch(url)
+  const response = await authFetch(url)
   if (!response.ok) {
     const detail = await response.text()
     throw new Error(`Anomaly detection failed (${response.status}): ${detail}`)

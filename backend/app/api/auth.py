@@ -1,21 +1,23 @@
-"""Auth API (Phase 13): register, login, refresh, logout, me."""
+"""Auth API (Phases 13-14): register, login, refresh, logout, me."""
 
-import json
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
+from jose import JWTError
 from pydantic import BaseModel, EmailStr
 
 from app.config import settings
 from app.core.auth.security import (
     create_access_token,
     create_refresh_token,
+    decode_token,
     get_current_user,
     hash_password,
     hash_refresh_token,
     verify_password,
 )
+from app.core.errors import AppError, bad_credentials, email_taken, token_invalid
 from app.db import get_connection, init_db
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -54,6 +56,17 @@ def _user_response(row) -> dict:
     }
 
 
+def _fetch_user_by_email(email: str):
+    conn = get_connection()
+    try:
+        return conn.execute(
+            "SELECT user_id, email, password_hash, full_name, role, created_at FROM users WHERE email = ?",
+            (email,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+
 def _issue_token_pair(user_id: str, conn) -> tuple[str, str]:
     """Create access + refresh JWTs; persist the refresh token record."""
     access = create_access_token(user_id)
@@ -71,7 +84,7 @@ def _issue_token_pair(user_id: str, conn) -> tuple[str, str]:
 
 @router.post("/register")
 def register(body: RegisterRequest) -> dict:
-    """Create an account; 400 if the email is already taken."""
+    """Create an account (open route — no login required)."""
     init_db()
     conn = get_connection()
     try:
@@ -79,7 +92,7 @@ def register(body: RegisterRequest) -> dict:
             "SELECT user_id FROM users WHERE email = ?", (body.email,)
         ).fetchone()
         if existing is not None:
-            raise HTTPException(status_code=400, detail="Email already registered")
+            raise email_taken()
         user_id = str(uuid.uuid4())
         conn.execute(
             "INSERT INTO users (user_id, email, password_hash, full_name, role, created_at) "
@@ -94,24 +107,13 @@ def register(body: RegisterRequest) -> dict:
     return {"access_token": access, "refresh_token": refresh, "user": _user_response(row)}
 
 
-def _fetch_user_by_email(email: str):
-    conn = get_connection()
-    try:
-        return conn.execute(
-            "SELECT user_id, email, password_hash, full_name, role, created_at FROM users WHERE email = ?",
-            (email,),
-        ).fetchone()
-    finally:
-        conn.close()
-
-
 @router.post("/login")
 def login(body: LoginRequest) -> dict:
-    """Verify credentials; 401 on wrong email or password."""
+    """Verify credentials (open route — no login required)."""
     init_db()
     row = _fetch_user_by_email(body.email)
     if row is None or not verify_password(body.password, row["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        raise bad_credentials()
     conn = get_connection()
     try:
         access, refresh = _issue_token_pair(row["user_id"], conn)
@@ -124,17 +126,12 @@ def login(body: LoginRequest) -> dict:
 @router.post("/refresh")
 def refresh_tokens(body: RefreshRequest) -> dict:
     """Exchange a valid, unrevoked refresh token for a new access token."""
-    from jose import JWTError
-
-    from app.core.auth.security import decode_token
-
-    invalid = HTTPException(status_code=401, detail="Invalid refresh token")
     try:
         payload = decode_token(body.refresh_token)
-    except JWTError:
-        raise invalid
+    except AppError:
+        raise token_invalid()
     if payload.get("type") != "refresh":
-        raise invalid
+        raise token_invalid()
     token_id = payload.get("jti")
     conn = get_connection()
     try:
@@ -143,7 +140,7 @@ def refresh_tokens(body: RefreshRequest) -> dict:
             (token_id,),
         ).fetchone()
         if row is None or row["revoked"]:
-            raise invalid
+            raise token_invalid()
         access = create_access_token(row["user_id"])
     finally:
         conn.close()
@@ -153,14 +150,10 @@ def refresh_tokens(body: RefreshRequest) -> dict:
 @router.post("/logout")
 def logout(body: LogoutRequest) -> dict:
     """Revoke a refresh token so it can no longer mint access tokens."""
-    from jose import JWTError
-
-    from app.core.auth.security import decode_token
-
     try:
         payload = decode_token(body.refresh_token)
         token_id = payload.get("jti")
-    except JWTError:
+    except AppError:
         token_id = None
     conn = get_connection()
     try:
@@ -176,5 +169,5 @@ def logout(body: LogoutRequest) -> dict:
 
 @router.get("/me")
 def me(user: dict = Depends(get_current_user)) -> dict:
-    """Return the authenticated user's profile."""
+    """Return the authenticated user's profile (requires login)."""
     return user

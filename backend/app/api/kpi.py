@@ -4,7 +4,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.config import settings
 from app.api.integrations import apply_persona
@@ -13,8 +13,9 @@ from app.core.kpi_engine.discovery import discover_kpis
 from app.core.kpi_engine.materiality import score_materiality
 from app.core.kpi_engine.validation import validate_kpi
 from app.db import get_connection
+from app.core.auth.security import get_current_user
 
-router = APIRouter(prefix="/kpi", tags=["kpi"])
+router = APIRouter(prefix="/kpi", tags=["kpi"], dependencies=[Depends(get_current_user)])
 
 
 def _load_dataset_row(dataset_id: str) -> dict:

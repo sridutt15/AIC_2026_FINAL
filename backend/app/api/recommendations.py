@@ -16,7 +16,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.drivers import get_drivers
 from app.config import settings
@@ -27,8 +27,9 @@ from app.core.recommendation.lever_library import lever_library
 from app.core.recommendation.package_builder import build_package
 from app.core.telemetry.logger import timed_stage
 from app.db import get_connection
+from app.core.auth.security import get_current_user
 
-router = APIRouter(prefix="/recommendations", tags=["recommendations"])
+router = APIRouter(prefix="/recommendations", tags=["recommendations"], dependencies=[Depends(get_current_user)])
 
 # Stage-latency telemetry (Phase 11).
 call_llm = timed_stage("LLM recommendation")(call_llm)

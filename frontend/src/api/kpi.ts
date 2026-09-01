@@ -1,10 +1,11 @@
+import { authFetch } from './authClient'
 import { API_BASE_URL } from './health'
 import { withPersona } from './persona'
 import type { DatasetListEntry, KpiComputeResponse, KpiInfo } from '../types'
 
 /** GET /kpi/datasets — list canonical datasets for the selector. */
 export async function listDatasets(): Promise<DatasetListEntry[]> {
-  const response = await fetch(`${API_BASE_URL}/kpi/datasets`)
+  const response = await authFetch(`${API_BASE_URL}/kpi/datasets`)
   if (!response.ok) {
     throw new Error(`Failed to list datasets (${response.status})`)
   }
@@ -14,7 +15,7 @@ export async function listDatasets(): Promise<DatasetListEntry[]> {
 
 /** POST /kpi/discover/{dataset_id} — run discovery + validation. */
 export async function discoverKpis(datasetId: string): Promise<KpiInfo[]> {
-  const response = await fetch(`${API_BASE_URL}/kpi/discover/${datasetId}`, {
+  const response = await authFetch(`${API_BASE_URL}/kpi/discover/${datasetId}`, {
     method: 'POST',
   })
   if (!response.ok) {
@@ -34,7 +35,7 @@ export async function listKpis(
     `${API_BASE_URL}/kpi/dataset/${datasetId}`,
     personaId,
   )
-  const response = await fetch(url)
+  const response = await authFetch(url)
   if (!response.ok) {
     throw new Error(`Failed to list KPIs (${response.status})`)
   }
@@ -44,7 +45,7 @@ export async function listKpis(
 
 /** GET /kpi/{kpi_id}/compute — value/trend/baseline/benchmark/CI (cached). */
 export async function computeKpi(kpiId: string): Promise<KpiComputeResponse> {
-  const response = await fetch(`${API_BASE_URL}/kpi/${kpiId}/compute`)
+  const response = await authFetch(`${API_BASE_URL}/kpi/${kpiId}/compute`)
   if (!response.ok) {
     const detail = await response.text()
     throw new Error(`Compute failed (${response.status}): ${detail}`)

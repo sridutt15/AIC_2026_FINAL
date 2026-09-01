@@ -16,7 +16,7 @@ def _register(client, email=EMAIL, password=PASSWORD, name="Phase Thirteen"):
     )
 
 
-def test_register_stores_bcrypt_hash_not_plaintext(isolated_env):
+def test_register_stores_bcrypt_hash_not_plaintext(real_auth):
     """password_hash must be a bcrypt hash ($2b$...), never the plaintext."""
     init_db()
     with TestClient(app) as client:
@@ -39,18 +39,18 @@ def test_register_stores_bcrypt_hash_not_plaintext(isolated_env):
     assert stored.startswith("$2b$")  # bcrypt prefix
 
 
-def test_register_same_email_twice_fails(isolated_env):
-    """Second registration with the same email returns an error."""
+def test_register_same_email_twice_fails(real_auth):
+    """Second registration with the same email returns 409 email_taken."""
     init_db()
     with TestClient(app) as client:
         first = _register(client)
         assert first.status_code == 200
         second = _register(client)
-        assert second.status_code == 400
-        assert "already" in second.json()["detail"]
+        assert second.status_code == 409
+        assert second.json()["error"]["code"] == "email_taken"
 
 
-def test_login_correct_password_returns_both_tokens(isolated_env):
+def test_login_correct_password_returns_both_tokens(real_auth):
     init_db()
     with TestClient(app) as client:
         _register(client)
@@ -64,7 +64,7 @@ def test_login_correct_password_returns_both_tokens(isolated_env):
         assert body["user"]["email"] == EMAIL
 
 
-def test_login_wrong_password_401(isolated_env):
+def test_login_wrong_password_401(real_auth):
     init_db()
     with TestClient(app) as client:
         _register(client)
@@ -74,13 +74,13 @@ def test_login_wrong_password_401(isolated_env):
         assert resp.status_code == 401
 
 
-def test_me_without_token_401(isolated_env):
+def test_me_without_token_401(real_auth):
     init_db()
     with TestClient(app) as client:
         assert client.get("/auth/me").status_code == 401
 
 
-def test_me_with_valid_token_returns_user(isolated_env):
+def test_me_with_valid_token_returns_user(real_auth):
     init_db()
     with TestClient(app) as client:
         _register(client)
@@ -96,7 +96,7 @@ def test_me_with_valid_token_returns_user(isolated_env):
         assert resp.json()["user_id"] == login["user"]["user_id"]
 
 
-def test_refresh_and_logout(isolated_env):
+def test_refresh_and_logout(real_auth):
     """Refresh mints a new access token; logout revokes the refresh token."""
     init_db()
     with TestClient(app) as client:

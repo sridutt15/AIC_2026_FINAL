@@ -6,15 +6,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.config import settings
 from app.core.canonical.reconciler import align_grain, reconcile
 from app.core.ingestion.loaders import load_source
 from app.db import get_connection
+from app.core.auth.security import get_current_user
 
-router = APIRouter(prefix="/canonical", tags=["canonical"])
+router = APIRouter(prefix="/canonical", tags=["canonical"], dependencies=[Depends(get_current_user)])
 
 PREVIEW_ROWS = 20
 

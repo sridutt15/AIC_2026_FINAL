@@ -1,3 +1,4 @@
+import { authFetch } from './authClient'
 import { API_BASE_URL } from './health'
 import type { CanonicalDatasetInfo } from '../types'
 
@@ -7,7 +8,7 @@ export async function buildCanonical(
   joinKeys: Record<string, Record<string, string>>,
   targetCadence?: string | null,
 ): Promise<CanonicalDatasetInfo> {
-  const response = await fetch(`${API_BASE_URL}/canonical/build`, {
+  const response = await authFetch(`${API_BASE_URL}/canonical/build`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -28,7 +29,7 @@ export async function previewCanonical(
   datasetId: string,
   page = 1,
 ): Promise<CanonicalDatasetInfo> {
-  const response = await fetch(
+  const response = await authFetch(
     `${API_BASE_URL}/canonical/${datasetId}/preview?page=${page}`,
   )
   if (!response.ok) {
@@ -40,7 +41,7 @@ export async function previewCanonical(
 
 /** DELETE /canonical/{dataset_id} — delete a dataset and all derived KPI rows (sources kept). */
 export async function deleteCanonical(datasetId: string): Promise<{ cascaded_kpis: string[] }> {
-  const response = await fetch(`${API_BASE_URL}/canonical/${datasetId}`, {
+  const response = await authFetch(`${API_BASE_URL}/canonical/${datasetId}`, {
     method: 'DELETE',
   })
   if (!response.ok) {

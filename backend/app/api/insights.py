@@ -15,7 +15,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.drivers import get_drivers
 from app.core.insight_templates.generator import generate_insight
@@ -23,8 +23,9 @@ from app.core.persona.access_control import filter_for_persona
 from app.core.telemetry.logger import timed_stage
 from app.db import get_connection
 from app.api.integrations import get_persona, contracts_for_dataset
+from app.core.auth.security import get_current_user
 
-router = APIRouter(prefix="/insights", tags=["insights"])
+router = APIRouter(prefix="/insights", tags=["insights"], dependencies=[Depends(get_current_user)])
 
 # Stage-latency telemetry (Phase 11).
 get_drivers = timed_stage("insight generation")(get_drivers)

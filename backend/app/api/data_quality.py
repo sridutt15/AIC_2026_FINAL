@@ -4,14 +4,15 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.config import settings
 from app.core.ingestion.loaders import load_source
 from app.core.quality.report_builder import build_quality_report
 from app.db import get_connection
+from app.core.auth.security import get_current_user
 
-router = APIRouter(prefix="/data-quality", tags=["data-quality"])
+router = APIRouter(prefix="/data-quality", tags=["data-quality"], dependencies=[Depends(get_current_user)])
 
 
 def _load_df(source_id: str):

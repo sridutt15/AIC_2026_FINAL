@@ -4,14 +4,15 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.config import settings
 from app.core.ingestion.loaders import load_source
 from app.core.profiling.profiler import profile_dataframe
 from app.db import get_connection
+from app.core.auth.security import get_current_user
 
-router = APIRouter(prefix="/profiling", tags=["profiling"])
+router = APIRouter(prefix="/profiling", tags=["profiling"], dependencies=[Depends(get_current_user)])
 
 
 def _get_source(source_id: str) -> dict:

@@ -1,25 +1,30 @@
-"""Password hashing + JWT utilities (Phase 13).
+"""Password hashing + JWT utilities (Phases 13-14).
 
 access tokens: short-lived JWTs identifying a user (sub claim = user_id).
 refresh tokens: longer-lived JWTs whose id (jti) is persisted in the
 refresh_tokens table so logout can revoke them server-side.
+
+decode_token raises the precise AppError for each failure mode
+(token_missing / token_expired / token_invalid) so get_current_user can
+map each to its own response.
 """
 
 import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+from jose import ExpiredSignatureError, JWTError, jwt
 from passlib.context import CryptContext
 
 from app.config import settings
+from app.core.errors import token_expired, token_invalid, token_missing
 from app.db import get_connection
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=True)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
 
 def hash_password(plain: str) -> str:
@@ -58,8 +63,16 @@ def create_refresh_token(user_id: str) -> tuple[str, str]:
 
 
 def decode_token(token: str) -> dict:
-    """Decode + verify a JWT; raises JWTError on invalid/expired tokens."""
-    return jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+    """Decode + verify a JWT, raising the specific AppError for each failure:
+    missing token, expired token, or invalid signature/payload."""
+    if not token:
+        raise token_missing()
+    try:
+        return jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+    except ExpiredSignatureError as exc:
+        raise token_expired() from exc
+    except JWTError as exc:
+        raise token_invalid() from exc
 
 
 def hash_refresh_token(token: str) -> str:
@@ -70,19 +83,15 @@ def hash_refresh_token(token: str) -> str:
 def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     """FastAPI dependency: decode the bearer token and load the user.
 
-    Raises 401 for invalid/expired tokens or unknown users. Protected
-    routes use this via Depends(); Phase 14 wires it across the app.
+    Raises the distinct AppError for each failure mode; loads the user
+    from the database. Used via Depends() on every protected route.
     """
-    invalid = HTTPException(status_code=401, detail="Invalid or expired token")
-    try:
-        payload = decode_token(token)
-    except JWTError:
-        raise invalid
+    payload = decode_token(token)  # raises token_missing/expired/invalid
     if payload.get("type") != "access":
-        raise invalid
+        raise token_invalid()
     user_id = payload.get("sub")
     if not user_id:
-        raise invalid
+        raise token_invalid()
     conn = get_connection()
     try:
         row = conn.execute(
@@ -92,7 +101,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     finally:
         conn.close()
     if row is None:
-        raise invalid
+        raise token_invalid()
     return {
         "user_id": row["user_id"],
         "email": row["email"],

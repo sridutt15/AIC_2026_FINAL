@@ -8,13 +8,14 @@ filters the response per the persona's access rules.
 import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.integrations import apply_confidence, apply_persona
 from app.core.anomaly.detectors import run_all_detectors
 from app.db import get_connection
+from app.core.auth.security import get_current_user
 
-router = APIRouter(prefix="/anomaly", tags=["anomaly"])
+router = APIRouter(prefix="/anomaly", tags=["anomaly"], dependencies=[Depends(get_current_user)])
 
 
 def _get_kpi_and_computation(kpi_id: str):

@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { checkHealth, checkDatabaseHealth } from './api/health'
 import { listPersonas } from './api/persona'
+import { setSessionExpiredHandler } from './api/authClient'
 import { PersonaContext } from './context/PersonaContext'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import type { Persona } from './types'
@@ -22,6 +23,7 @@ import RegisterPage from './pages/RegisterPage'
 
 type BackendStatus = 'checking' | 'connected' | 'unreachable'
 type DbStatus = 'checking' | 'connected' | 'unreachable'
+type BootStage = 'server' | 'database' | 'ready' | 'db_failed'
 type PageName =
   | 'Upload'
   | 'Profile'
@@ -123,6 +125,40 @@ function PersonaSwitcher({
   )
 }
 
+/** Two-stage boot screen: server, then database, with retry on 503. */
+function BootScreen({
+  stage,
+  dbMessage,
+  onRetry,
+}: {
+  stage: BootStage
+  dbMessage?: string
+  onRetry: () => void
+}) {
+  return (
+    <div className="flex h-screen flex-col items-center justify-center gap-4 bg-gray-50">
+      <h1 className="text-lg font-semibold text-gray-900">KPI Intelligence-to-Action Engine</h1>
+      {stage === 'server' && (
+        <p className="animate-pulse text-sm text-gray-500">Waking up the server…</p>
+      )}
+      {stage === 'database' && (
+        <p className="animate-pulse text-sm text-gray-500">Connecting to database…</p>
+      )}
+      {stage === 'db_failed' && (
+        <div className="flex flex-col items-center gap-3">
+          <p className="text-sm font-medium text-red-600">{dbMessage}</p>
+          <button
+            onClick={onRetry}
+            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -132,31 +168,86 @@ export default function App() {
 }
 
 function AppShell() {
-  const { user, logout } = useAuth()
+  const { user, ready, logout } = useAuth()
+  const [bootStage, setBootStage] = useState<BootStage>('server')
+  const [bootSlow, setBootSlow] = useState(false)
+  const [dbMessage, setDbMessage] = useState<string | undefined>(undefined)
   const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking')
   const [dbStatus, setDbStatus] = useState<DbStatus>('checking')
-  const [dbMessage, setDbMessage] = useState<string | undefined>(undefined)
   const [page, setPage] = useState<PageName>('Dashboard')
   const [personas, setPersonas] = useState<Persona[]>([])
   const [persona, setPersona] = useState<Persona | null>(null)
+  const bootTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const runBoot = useCallback(async () => {
+    setBootStage('server')
+    setBootSlow(false)
+    if (bootTimer.current) clearTimeout(bootTimer.current)
+    bootTimer.current = setTimeout(() => setBootSlow(true), 3000)
+    try {
+      await checkHealth()
+    } catch {
+      setBackendStatus('unreachable')
+      return // stay on "Waking up the server…" until it responds
+    }
+    setBackendStatus('connected')
+    setBootStage('database')
+    setBootSlow(false)
+    if (bootTimer.current) clearTimeout(bootTimer.current)
+    try {
+      await checkDatabaseHealth()
+      setDbStatus('connected')
+      setDbMessage(undefined)
+      setBootStage('ready')
+    } catch (err) {
+      setDbStatus('unreachable')
+      setDbMessage(err instanceof Error ? err.message : 'Database unreachable')
+      setBootStage('db_failed')
+    }
+  }, [])
+
+  // Two-stage boot on first load.
+  useEffect(() => {
+    void runBoot()
+    return () => {
+      if (bootTimer.current) clearTimeout(bootTimer.current)
+    }
+  }, [runBoot])
 
   useEffect(() => {
-    checkHealth()
-      .then(() => setBackendStatus('connected'))
-      .catch(() => setBackendStatus('unreachable'))
-    checkDatabaseHealth()
-      .then(() => {
-        setDbStatus('connected')
-        setDbMessage(undefined)
-      })
-      .catch((err: Error) => {
-        setDbStatus('unreachable')
-        setDbMessage(err.message)
-      })
-    listPersonas()
-      .then(setPersonas)
-      .catch(() => setPersonas([]))
-  }, [])
+    setSessionExpiredHandler(() => {
+      void logout()
+      setPage('Login')
+    })
+  }, [logout])
+
+  // Load personas once the app content is shown.
+  useEffect(() => {
+    if (bootStage === 'ready') {
+      listPersonas()
+        .then(setPersonas)
+        .catch(() => setPersonas([]))
+    }
+  }, [bootStage])
+
+  // Route guard: once session restore settled, no user -> Login page.
+  const needsLogin = ready && !user && page !== 'Login' && page !== 'Register'
+  useEffect(() => {
+    if (needsLogin) {
+      setPage('Login')
+    }
+  }, [needsLogin])
+
+  // Two-stage boot gate: nothing renders until server + database are up.
+  if (bootStage !== 'ready') {
+    return (
+      <BootScreen
+        stage={bootStage}
+        dbMessage={bootSlow || bootStage !== 'server' ? dbMessage : undefined}
+        onRetry={() => void runBoot()}
+      />
+    )
+  }
 
   return (
     <PersonaContext.Provider value={{ persona, personas, setPersona }}>

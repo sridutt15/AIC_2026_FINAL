@@ -1,3 +1,4 @@
+import { authFetch } from './authClient'
 import { API_BASE_URL } from './health'
 import { withPersona } from './persona'
 import type { DriversResponse, EvidenceResponse } from '../types'
@@ -11,7 +12,7 @@ export async function getDrivers(
   let query = refresh ? '?refresh=true' : ''
   query = withPersona(query, personaId)
   const url = `${API_BASE_URL}/drivers/${kpiId}${query}`
-  const response = await fetch(url)
+  const response = await authFetch(url)
   if (!response.ok) {
     const detail = await response.text()
     throw new Error(`Driver analysis failed (${response.status}): ${detail}`)
@@ -27,7 +28,7 @@ export async function runDiffInDiff(
   beforePeriod: string,
   afterPeriod: string,
 ): Promise<EvidenceResponse> {
-  const response = await fetch(`${API_BASE_URL}/drivers/${kpiId}/diff-in-diff`, {
+  const response = await authFetch(`${API_BASE_URL}/drivers/${kpiId}/diff-in-diff`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

@@ -4,7 +4,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.api.integrations import apply_confidence, apply_persona
@@ -15,8 +15,9 @@ from app.core.telemetry.logger import timed_stage
 from app.db import get_connection
 
 from .kpi import _load_canonical_df, _load_contracts, _load_dataset_row
+from app.core.auth.security import get_current_user
 
-router = APIRouter(prefix="/drivers", tags=["drivers"])
+router = APIRouter(prefix="/drivers", tags=["drivers"], dependencies=[Depends(get_current_user)])
 
 # Stage-latency telemetry (Phase 11): the heavy pipeline stages are timed.
 decompose_contribution = timed_stage("driver analysis")(decompose_contribution)

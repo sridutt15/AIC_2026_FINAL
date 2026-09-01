@@ -1,9 +1,10 @@
+import { authFetch } from './authClient'
 import { API_BASE_URL } from './health'
 import type { QualityResponse } from '../types'
 
 /** GET /data-quality/{source_id} — deterministic quality report (cached server-side). */
 export async function getQualityReport(sourceId: string): Promise<QualityResponse> {
-  const response = await fetch(`${API_BASE_URL}/data-quality/${sourceId}`)
+  const response = await authFetch(`${API_BASE_URL}/data-quality/${sourceId}`)
   if (!response.ok) {
     const detail = await response.text()
     throw new Error(`Failed to fetch quality report (${response.status}): ${detail}`)
@@ -18,7 +19,7 @@ export async function getQualityReport(sourceId: string): Promise<QualityRespons
 export async function qualityReportForDataset(
   datasetId: string,
 ): Promise<{ score: number } | null> {
-  const datasets = await fetch(`${API_BASE_URL}/kpi/datasets`).then((r) => {
+  const datasets = await authFetch(`${API_BASE_URL}/kpi/datasets`).then((r) => {
     if (!r.ok) throw new Error(`Failed to list datasets (${r.status})`)
     return r.json() as Promise<{ datasets: { dataset_id: string; source_ids: string[] }[] }>
   })

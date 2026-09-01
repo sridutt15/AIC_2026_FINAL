@@ -1,15 +1,16 @@
 """Feedback API — record/list analyst verdicts on insights & recommendations."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.core.auth.security import get_current_user
 from app.core.feedback.store import (
     get_feedback,
     recent_feedback,
     record_feedback,
 )
 
-router = APIRouter(prefix="/feedback", tags=["feedback"])
+router = APIRouter(prefix="/feedback", tags=["feedback"], dependencies=[Depends(get_current_user)])
 
 
 class FeedbackRequest(BaseModel):

@@ -1,3 +1,4 @@
+import { authFetch } from './authClient'
 import { API_BASE_URL } from './health'
 import { withPersona } from './persona'
 import type {
@@ -16,7 +17,7 @@ export async function getRecommendationPackage(
 ): Promise<RecommendationPackageResponse> {
   const query = withPersona('', personaId)
   const url = `${API_BASE_URL}/recommendations/${kpiId}/package${query}`
-  const response = await fetch(url)
+  const response = await authFetch(url)
   if (!response.ok) {
     const detail = await response.text()
     throw new Error(`Recommendation package failed (${response.status}): ${detail}`)
@@ -35,7 +36,7 @@ export async function getRecommendation(
 ): Promise<RecommendationResponse> {
   const query = withPersona('', personaId)
   const url = `${API_BASE_URL}/recommendations/${kpiId}${query}`
-  const response = await fetch(url)
+  const response = await authFetch(url)
   if (!response.ok) {
     const detail = await response.text()
     throw new Error(`Recommendation failed (${response.status}): ${detail}`)
@@ -45,7 +46,7 @@ export async function getRecommendation(
 
 /** GET /telemetry/llm-ledger — stage-by-stage LLM usage + last call cost. */
 export async function getLlmLedger(): Promise<LlmLedgerResponse> {
-  const response = await fetch(`${API_BASE_URL}/telemetry/llm-ledger`)
+  const response = await authFetch(`${API_BASE_URL}/telemetry/llm-ledger`)
   if (!response.ok) {
     const detail = await response.text()
     throw new Error(`LLM ledger failed (${response.status}): ${detail}`)

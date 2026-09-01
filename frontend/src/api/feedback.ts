@@ -1,3 +1,4 @@
+import { authFetch } from './authClient'
 import { API_BASE_URL } from './health'
 import type { FeedbackRow } from '../types'
 
@@ -9,7 +10,7 @@ export async function submitFeedback(
   note: string | null = null,
   driverType: string | null = null,
 ): Promise<FeedbackRow> {
-  const response = await fetch(`${API_BASE_URL}/feedback`, {
+  const response = await authFetch(`${API_BASE_URL}/feedback`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -29,7 +30,7 @@ export async function submitFeedback(
 
 /** GET /feedback/recent — most recent feedback rows for the Feedback page. */
 export async function listRecentFeedback(limit = 20): Promise<FeedbackRow[]> {
-  const response = await fetch(`${API_BASE_URL}/feedback/recent?limit=${limit}`)
+  const response = await authFetch(`${API_BASE_URL}/feedback/recent?limit=${limit}`)
   if (!response.ok) {
     throw new Error(`Failed to list feedback (${response.status})`)
   }
@@ -39,7 +40,7 @@ export async function listRecentFeedback(limit = 20): Promise<FeedbackRow[]> {
 
 /** GET /feedback/{target_id} — all feedback for one target. */
 export async function getFeedbackForTarget(targetId: string): Promise<FeedbackRow[]> {
-  const response = await fetch(`${API_BASE_URL}/feedback/${encodeURIComponent(targetId)}`)
+  const response = await authFetch(`${API_BASE_URL}/feedback/${encodeURIComponent(targetId)}`)
   if (!response.ok) {
     throw new Error(`Failed to fetch feedback (${response.status})`)
   }

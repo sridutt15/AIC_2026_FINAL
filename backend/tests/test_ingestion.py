@@ -66,7 +66,7 @@ def test_upload_rejects_unsupported_extension(isolated_env):
         files={"file": ("data.txt", io.BytesIO(b"hello"), "text/plain")},
     )
     assert response.status_code == 400
-    assert "Unsupported file type" in response.json()["detail"]
+    assert "Unsupported file type" in response.json()["error"]["message"]
 
 
 def test_list_sources_returns_uploaded(isolated_env):

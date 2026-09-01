@@ -1,3 +1,4 @@
+import { authFetch } from './authClient'
 import { API_BASE_URL } from './health'
 import type { SourceInfo } from '../types'
 
@@ -19,7 +20,7 @@ export async function uploadSource(
   form.append('grain', grain)
   form.append('cadence', cadence)
 
-  const response = await fetch(`${API_BASE_URL}/ingestion/upload`, {
+  const response = await authFetch(`${API_BASE_URL}/ingestion/upload`, {
     method: 'POST',
     body: form,
   })
@@ -32,7 +33,7 @@ export async function uploadSource(
 
 /** GET /ingestion/sources — list all uploaded sources. */
 export async function listSources(): Promise<SourceInfo[]> {
-  const response = await fetch(`${API_BASE_URL}/ingestion/sources`)
+  const response = await authFetch(`${API_BASE_URL}/ingestion/sources`)
   if (!response.ok) {
     throw new Error(`Failed to list sources (${response.status})`)
   }
@@ -42,7 +43,7 @@ export async function listSources(): Promise<SourceInfo[]> {
 
 /** DELETE /ingestion/sources/{source_id} — delete a source and everything derived from it. */
 export async function deleteSource(sourceId: string): Promise<{ cascaded_datasets: string[] }> {
-  const response = await fetch(`${API_BASE_URL}/ingestion/sources/${sourceId}`, {
+  const response = await authFetch(`${API_BASE_URL}/ingestion/sources/${sourceId}`, {
     method: 'DELETE',
   })
   if (!response.ok) {

@@ -10,13 +10,14 @@ GET /telemetry/summary
     and the cache hit rate from llm_calls. Real logged data, no placeholders.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.core.feedback.store import apply_feedback_adjustments
 from app.core.telemetry.logger import stage_latency_summary
 from app.db import get_connection
+from app.core.auth.security import get_current_user
 
-router = APIRouter(prefix="/telemetry", tags=["telemetry"])
+router = APIRouter(prefix="/telemetry", tags=["telemetry"], dependencies=[Depends(get_current_user)])
 
 # The stage ledger: (stage, llm_used). Order mirrors the pipeline.
 STAGE_LEDGER = [

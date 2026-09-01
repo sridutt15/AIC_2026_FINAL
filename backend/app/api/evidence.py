@@ -2,11 +2,12 @@
 
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.db import get_connection
+from app.core.auth.security import get_current_user
 
-router = APIRouter(prefix="/evidence", tags=["evidence"])
+router = APIRouter(prefix="/evidence", tags=["evidence"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/{finding_id}")

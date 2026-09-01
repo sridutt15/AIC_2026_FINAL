@@ -3,13 +3,14 @@
 import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.core.semantic.contract_builder import build_contract
 from app.db import get_connection
+from app.core.auth.security import get_current_user
 
-router = APIRouter(prefix="/semantic-contract", tags=["semantic-contract"])
+router = APIRouter(prefix="/semantic-contract", tags=["semantic-contract"], dependencies=[Depends(get_current_user)])
 
 # Fields every contract must carry so downstream phases can rely on them.
 _REQUIRED_FIELDS = (

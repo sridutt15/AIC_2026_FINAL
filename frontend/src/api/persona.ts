@@ -1,9 +1,10 @@
+import { authFetch } from './authClient'
 import { API_BASE_URL } from './health'
 import type { Persona } from '../types'
 
 /** GET /personas — list seeded personas for the navbar switcher. */
 export async function listPersonas(): Promise<Persona[]> {
-  const response = await fetch(`${API_BASE_URL}/personas`)
+  const response = await authFetch(`${API_BASE_URL}/personas`)
   if (!response.ok) {
     throw new Error(`Failed to list personas (${response.status})`)
   }

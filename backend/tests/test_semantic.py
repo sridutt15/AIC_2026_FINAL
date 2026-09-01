@@ -199,7 +199,7 @@ def test_put_rejects_missing_fields(isolated_env):
             f"/semantic-contract/{source_id}", json={"contract": {"kpi_definitions": []}}
         )
         assert put.status_code == 422
-        assert "missing required fields" in put.json()["detail"]
+        assert "missing required fields" in put.json()["error"]["message"]
 
 
 def test_get_requires_profile_first(isolated_env):
