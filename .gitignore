@@ -1,0 +1,63 @@
+# ===== Secrets (never commit) =====
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Test / tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ===== Backend runtime data (generated, not source) =====
+# SQLite DB, uploaded sources, canonical datasets, enterprise dataset output
+backend/data/*
+
+# ===== Frontend =====
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+
+# ===== Logs =====
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# ===== Editors / IDEs =====
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ===== OS junk =====
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ===== AI-tool session state =====
+.kilo/

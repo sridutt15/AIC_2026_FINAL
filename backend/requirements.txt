@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+pandas
+numpy
+scipy
+statsmodels
+ruptures
+pydantic
+python-multipart
+python-dotenv
+pytest
+httpx
+anthropic
+openpyxl
+sqlalchemy
+psycopg2-binary

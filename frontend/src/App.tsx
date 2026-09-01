@@ -1,0 +1,212 @@
+import { useEffect, useState } from 'react'
+import { checkHealth, checkDatabaseHealth } from './api/health'
+import { listPersonas } from './api/persona'
+import { PersonaContext } from './context/PersonaContext'
+import type { Persona } from './types'
+import UploadPage from './pages/UploadPage'
+import ProfilePage from './pages/ProfilePage'
+import SemanticContractPage from './pages/SemanticContractPage'
+import DataQualityPage from './pages/DataQualityPage'
+import CanonicalModelPage from './pages/CanonicalModelPage'
+import KpiDashboardPage from './pages/KpiDashboardPage'
+import AnomalyPage from './pages/AnomalyPage'
+import DriversPage from './pages/DriversPage'
+import InsightsPage from './pages/InsightsPage'
+import RecommendationsPage from './pages/RecommendationsPage'
+import FeedbackPage from './pages/FeedbackPage'
+import TelemetryPage from './pages/TelemetryPage'
+import DashboardPage from './pages/DashboardPage'
+
+type BackendStatus = 'checking' | 'connected' | 'unreachable'
+type DbStatus = 'checking' | 'connected' | 'unreachable'
+type PageName =
+  | 'Upload'
+  | 'Profile'
+  | 'Semantic Contract'
+  | 'Data Quality'
+  | 'Canonical Model'
+  | 'KPIs'
+  | 'Anomalies'
+  | 'Drivers'
+  | 'Insights'
+  | 'Recommendations'
+  | 'Feedback'
+  | 'Telemetry'
+  | 'Dashboard'
+
+const NAV_ITEMS: { label: string; enabled: boolean; page?: PageName }[] = [
+  { label: 'Upload', enabled: true, page: 'Upload' },
+  { label: 'Profile', enabled: true, page: 'Profile' },
+  { label: 'Semantic Contract', enabled: true, page: 'Semantic Contract' },
+  { label: 'Data Quality', enabled: true, page: 'Data Quality' },
+  { label: 'Canonical Model', enabled: true, page: 'Canonical Model' },
+  { label: 'KPIs', enabled: true, page: 'KPIs' },
+  { label: 'Anomalies', enabled: true, page: 'Anomalies' },
+  { label: 'Drivers', enabled: true, page: 'Drivers' },
+  { label: 'Insights', enabled: true, page: 'Insights' },
+  { label: 'Recommendations', enabled: true, page: 'Recommendations' },
+  { label: 'Feedback', enabled: true, page: 'Feedback' },
+  { label: 'Telemetry', enabled: true, page: 'Telemetry' },
+  { label: 'Dashboard', enabled: true, page: 'Dashboard' },
+]
+
+function BackendBadge({ status }: { status: BackendStatus }) {
+  if (status === 'checking') {
+    return <span className="text-sm text-gray-400">Backend: Checking…</span>
+  }
+  if (status === 'connected') {
+    return <span className="text-sm font-medium text-green-600">Backend: Connected</span>
+  }
+  return <span className="text-sm font-medium text-red-600">Backend: Not reachable</span>
+}
+
+function DatabaseBadge({ status, message }: { status: DbStatus; message?: string }) {
+  if (status === 'checking') {
+    return <span className="text-sm text-gray-400">Database: Checking…</span>
+  }
+  if (status === 'connected') {
+    return (
+      <span className="text-sm font-medium text-green-600">Database: Connected (Supabase)</span>
+    )
+  }
+  return (
+    <span
+      className="text-sm font-medium text-red-600"
+      title={message ?? 'Database temporarily unavailable'}
+    >
+      Database: Not reachable{message ? ` — ${message}` : ''}
+    </span>
+  )
+}
+
+function PersonaSwitcher({
+  personas,
+  persona,
+  setPersona,
+}: {
+  personas: Persona[]
+  persona: Persona | null
+  setPersona: (p: Persona | null) => void
+}) {
+  return (
+    <label className="flex items-center gap-2 text-sm text-gray-500">
+      <span className="font-medium text-gray-600">View as:</span>
+      <select
+        value={persona?.persona_id ?? ''}
+        onChange={(e) => {
+          const selected = personas.find((p) => p.persona_id === e.target.value) ?? null
+          setPersona(selected)
+        }}
+        className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
+      >
+        <option value="">Unrestricted</option>
+        {personas.map((p) => (
+          <option key={p.persona_id} value={p.persona_id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+      {persona && (
+        <span
+          className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700"
+          title={persona.access.description ?? ''}
+        >
+          {persona.name}
+        </span>
+      )}
+    </label>
+  )
+}
+
+export default function App() {
+  const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking')
+  const [dbStatus, setDbStatus] = useState<DbStatus>('checking')
+  const [dbMessage, setDbMessage] = useState<string | undefined>(undefined)
+  const [page, setPage] = useState<PageName>('Dashboard')
+  const [personas, setPersonas] = useState<Persona[]>([])
+  const [persona, setPersona] = useState<Persona | null>(null)
+
+  useEffect(() => {
+    checkHealth()
+      .then(() => setBackendStatus('connected'))
+      .catch(() => setBackendStatus('unreachable'))
+    checkDatabaseHealth()
+      .then(() => {
+        setDbStatus('connected')
+        setDbMessage(undefined)
+      })
+      .catch((err: Error) => {
+        setDbStatus('unreachable')
+        setDbMessage(err.message)
+      })
+    listPersonas()
+      .then(setPersonas)
+      .catch(() => setPersonas([]))
+  }, [])
+
+  return (
+    <PersonaContext.Provider value={{ persona, personas, setPersona }}>
+      <div className="flex h-screen flex-col bg-gray-50">
+        <header className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-3 shadow-sm">
+          <h1 className="text-lg font-semibold text-gray-900">
+            KPI Intelligence-to-Action Engine
+          </h1>
+          <div className="flex items-center gap-6">
+            <PersonaSwitcher personas={personas} persona={persona} setPersona={setPersona} />
+            <BackendBadge status={backendStatus} />
+            <DatabaseBadge status={dbStatus} message={dbMessage} />
+          </div>
+        </header>
+
+      <div className="flex flex-1 overflow-hidden">
+        <aside className="w-60 shrink-0 border-r border-gray-200 bg-white py-4">
+          <nav>
+            <ul>
+              {NAV_ITEMS.map((item) => (
+                <li key={item.label}>
+                  {item.enabled ? (
+                    <button
+                      onClick={() => setPage(item.page!)}
+                      className={`block w-full px-6 py-2 text-left text-sm ${
+                        page === item.page
+                          ? 'bg-indigo-50 font-medium text-indigo-700'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ) : (
+                    <span
+                      className="block cursor-not-allowed select-none px-6 py-2 text-sm text-gray-400"
+                      aria-disabled="true"
+                      title="Coming in a later phase"
+                    >
+                      {item.label}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </aside>
+
+        <main className="flex-1 overflow-y-auto p-6">
+          {page === 'Upload' && <UploadPage />}
+          {page === 'Profile' && <ProfilePage />}
+          {page === 'Semantic Contract' && <SemanticContractPage />}
+          {page === 'Data Quality' && <DataQualityPage />}
+          {page === 'Canonical Model' && <CanonicalModelPage />}
+          {page === 'KPIs' && <KpiDashboardPage />}
+          {page === 'Anomalies' && <AnomalyPage />}
+          {page === 'Drivers' && <DriversPage />}
+          {page === 'Insights' && <InsightsPage />}
+          {page === 'Recommendations' && <RecommendationsPage />}
+          {page === 'Feedback' && <FeedbackPage />}
+          {page === 'Telemetry' && <TelemetryPage />}
+          {page === 'Dashboard' && <DashboardPage />}
+        </main>
+      </div>
+      </div>
+    </PersonaContext.Provider>
+  )
+}

@@ -1,0 +1,178 @@
+"""Recommendations API — Phase 10: LLM-phrased recommendations with cost ledger.
+
+GET /recommendations/{kpi_id}/package
+    Phase 9: builds/returns the structured package only — deterministic,
+    no LLM. Kept intact for the Insights page and tests.
+
+GET /recommendations/{kpi_id}?persona_id=
+    Phase 10: fetches/builds the structured package (Phase 9 logic), checks
+    the llm_calls cache by package hash, calls Gemini ONLY on a miss, logs
+    every call (tokens, latency, estimated cost) to llm_calls, and returns
+    {recommendation_text, package, llm_call_metadata}. The LLM sees only the
+    structured package fields — never raw data.
+"""
+
+import json
+import uuid
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, HTTPException
+
+from app.api.drivers import get_drivers
+from app.config import settings
+from app.core.llm.cache import log_llm_call, lookup_cached_call, package_hash
+from app.core.llm.client import call_llm
+from app.core.llm.prompt_templates import build_prompt
+from app.core.recommendation.lever_library import lever_library
+from app.core.recommendation.package_builder import build_package
+from app.core.telemetry.logger import timed_stage
+from app.db import get_connection
+
+router = APIRouter(prefix="/recommendations", tags=["recommendations"])
+
+# Stage-latency telemetry (Phase 11).
+call_llm = timed_stage("LLM recommendation")(call_llm)
+
+
+def _store_package(package_id: str, kpi_id: str, package: dict) -> str:
+    created_at = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO recommendation_packages "
+            "(package_id, kpi_id, package_json, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (package_id, kpi_id, json.dumps(package, sort_keys=True), created_at),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return created_at
+
+
+def _load_stored_texts(kpi_id: str) -> dict:
+    """{package_hash: recommendation_text} cached for this KPI.
+
+    The llm_calls table holds the cost ledger (schema per plan); the actual
+    recommendation texts are cached alongside the package in
+    recommendation_packages as {"hash": text} entries under a fixed id.
+    """
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT package_json FROM recommendation_packages "
+            "WHERE kpi_id = ? AND package_id = ?",
+            (kpi_id, f"texts:{kpi_id}"),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return {}
+    try:
+        return json.loads(row["package_json"])
+    except (ValueError, TypeError):
+        return {}
+
+
+def _store_texts(kpi_id: str, texts: dict) -> None:
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO recommendation_packages "
+            "(package_id, kpi_id, package_json, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (f"texts:{kpi_id}", kpi_id, json.dumps(texts), datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _build_structured_package(kpi_id: str, persona_id: str | None) -> dict:
+    """Phase 9 logic: top non-abstained finding -> seven-field package."""
+    drivers_response = get_drivers(kpi_id, refresh=False, persona_id=persona_id)
+
+    findings = [
+        f for f in drivers_response.get("findings", [])
+        if not (f.get("finding") or {}).get("abstained")
+        and (f.get("finding") or {}).get("slices")
+    ]
+    if not findings:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "No confident findings for this KPI — a recommendation "
+                "requires at least one non-abstained driver finding."
+            ),
+        )
+
+    top = findings[0]
+    try:
+        return build_package(
+            top["finding"], top.get("evidence") or {}, top.get("confidence"), lever_library
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/{kpi_id}/package")
+def get_recommendation_package(kpi_id: str, persona_id: str | None = None) -> dict:
+    """Build the structured recommendation package (deterministic, no LLM)."""
+    package = _build_structured_package(kpi_id, persona_id)
+
+    package_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"package:{kpi_id}"))
+    created_at = _store_package(package_id, kpi_id, package)
+
+    return {
+        "package_id": package_id,
+        "kpi_id": kpi_id,
+        "package": package,
+        "created_at": created_at,
+        "llm_call": False,
+    }
+
+
+@router.get("/{kpi_id}")
+def get_recommendation(kpi_id: str, persona_id: str | None = None) -> dict:
+    """LLM-phrased recommendation from the structured package (Phase 10).
+
+    The ONLY endpoint that calls an LLM. Cache-first: an identical package
+    (same hash) reuses the stored text with no API call. Every call — live
+    or cached — is logged to llm_calls with tokens/latency/cost.
+    """
+    package = _build_structured_package(kpi_id, persona_id)
+    _store_package(
+        str(uuid.uuid5(uuid.NAMESPACE_URL, f"package:{kpi_id}")), kpi_id, package
+    )
+
+    hash_value = package_hash(package, persona_id)
+    texts = _load_stored_texts(kpi_id)
+    cached_row = lookup_cached_call(hash_value)
+
+    if cached_row is not None and hash_value in texts:
+        metadata = log_llm_call(kpi_id, hash_value, cached_row, cached=True)
+        return {
+            "kpi_id": kpi_id,
+            "persona_id": persona_id,
+            "recommendation_text": texts[hash_value],
+            "package": package,
+            "llm_call_metadata": {**metadata, "model": settings.GEMINI_MODEL},
+        }
+
+    prompt = build_prompt(package, persona_id)
+    try:
+        result = call_llm(prompt)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    metadata = log_llm_call(kpi_id, hash_value, result, cached=False)
+    texts[hash_value] = result["text"]
+    _store_texts(kpi_id, texts)
+
+    return {
+        "kpi_id": kpi_id,
+        "persona_id": persona_id,
+        "recommendation_text": result["text"],
+        "package": package,
+        "llm_call_metadata": {**metadata, "model": result.get("model", settings.GEMINI_MODEL)},
+    }
