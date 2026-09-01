@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { checkHealth, checkDatabaseHealth } from './api/health'
 import { listPersonas } from './api/persona'
 import { PersonaContext } from './context/PersonaContext'
+import { AuthProvider, useAuth } from './context/AuthContext'
 import type { Persona } from './types'
 import UploadPage from './pages/UploadPage'
 import ProfilePage from './pages/ProfilePage'
@@ -16,6 +17,8 @@ import RecommendationsPage from './pages/RecommendationsPage'
 import FeedbackPage from './pages/FeedbackPage'
 import TelemetryPage from './pages/TelemetryPage'
 import DashboardPage from './pages/DashboardPage'
+import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/RegisterPage'
 
 type BackendStatus = 'checking' | 'connected' | 'unreachable'
 type DbStatus = 'checking' | 'connected' | 'unreachable'
@@ -33,6 +36,8 @@ type PageName =
   | 'Feedback'
   | 'Telemetry'
   | 'Dashboard'
+  | 'Login'
+  | 'Register'
 
 const NAV_ITEMS: { label: string; enabled: boolean; page?: PageName }[] = [
   { label: 'Upload', enabled: true, page: 'Upload' },
@@ -119,6 +124,15 @@ function PersonaSwitcher({
 }
 
 export default function App() {
+  return (
+    <AuthProvider>
+      <AppShell />
+    </AuthProvider>
+  )
+}
+
+function AppShell() {
+  const { user, logout } = useAuth()
   const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking')
   const [dbStatus, setDbStatus] = useState<DbStatus>('checking')
   const [dbMessage, setDbMessage] = useState<string | undefined>(undefined)
@@ -153,6 +167,36 @@ export default function App() {
           </h1>
           <div className="flex items-center gap-6">
             <PersonaSwitcher personas={personas} persona={persona} setPersona={setPersona} />
+            {user ? (
+              <>
+                <span className="text-sm font-medium text-gray-700">
+                  Logged in as {user.email}
+                </span>
+                <button
+                  onClick={() => {
+                    void logout()
+                  }}
+                  className="rounded-md border border-gray-300 px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Logout
+                </button>
+              </>
+            ) : (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setPage('Login')}
+                  className="text-sm font-medium text-indigo-600 hover:underline"
+                >
+                  Login
+                </button>
+                <button
+                  onClick={() => setPage('Register')}
+                  className="text-sm font-medium text-indigo-600 hover:underline"
+                >
+                  Register
+                </button>
+              </div>
+            )}
             <BackendBadge status={backendStatus} />
             <DatabaseBadge status={dbStatus} message={dbMessage} />
           </div>
@@ -204,6 +248,8 @@ export default function App() {
           {page === 'Feedback' && <FeedbackPage />}
           {page === 'Telemetry' && <TelemetryPage />}
           {page === 'Dashboard' && <DashboardPage />}
+          {page === 'Login' && <LoginPage onDone={() => setPage('Dashboard')} />}
+          {page === 'Register' && <RegisterPage onDone={() => setPage('Dashboard')} />}
         </main>
       </div>
       </div>

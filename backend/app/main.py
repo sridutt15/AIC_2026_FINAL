@@ -21,6 +21,7 @@ from app.api import (
     recommendations,
     telemetry,
     feedback,
+    auth,
 )
 from app.db import init_db
 
@@ -35,7 +36,7 @@ app = FastAPI(title="KPI Intelligence-to-Action Engine", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5174"],
+    allow_origins=["http://localhost:5174", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -56,3 +57,4 @@ app.include_router(insights.router)
 app.include_router(recommendations.router)
 app.include_router(telemetry.router)
 app.include_router(feedback.router)
+app.include_router(auth.router)

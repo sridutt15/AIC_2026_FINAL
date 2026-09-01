@@ -38,6 +38,20 @@ class Settings:
                 "(Project Settings -> Database -> Connection string, port 6543)."
             )
         self.DATABASE_URL: str = database_url
+        # Auth (Phase 13): JWT signing key + token lifetimes.
+        secret_key = os.getenv("SECRET_KEY", "")
+        if not secret_key:
+            raise RuntimeError(
+                "SECRET_KEY is required but missing. Generate one with "
+                "`openssl rand -hex 32` and set it in backend/.env."
+            )
+        self.SECRET_KEY: str = secret_key
+        self.ACCESS_TOKEN_EXPIRE_MINUTES: int = int(
+            os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
+        )
+        self.REFRESH_TOKEN_EXPIRE_DAYS: int = int(
+            os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7")
+        )
         # Raw uploaded files live here, one subfolder per source_id.
         self.UPLOADS_DIR: Path = BASE_DIR / "data" / "uploads"
 

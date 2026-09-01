@@ -177,3 +177,28 @@ class FeedbackMeta(Base):
     feedback_id = Column(Text, primary_key=True)
     driver_type = Column(Text)
     created_at = Column(Text)
+
+
+# --- Phase 13 auth tables -----------------------------------------------------
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    user_id = Column(Text, primary_key=True)
+    email = Column(Text, nullable=False, unique=True)
+    password_hash = Column(Text, nullable=False)
+    full_name = Column(Text)
+    role = Column(Text, default="member")
+    created_at = Column(Text)
+
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    token_id = Column(Text, primary_key=True)
+    user_id = Column(Text)
+    token_hash = Column(Text)
+    expires_at = Column(Text)
+    revoked = Column(Integer, default=0)
+    created_at = Column(Text)
