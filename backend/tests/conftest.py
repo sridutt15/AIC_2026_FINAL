@@ -55,6 +55,28 @@ def isolated_env(tmp_path: Path):
 
     app.dependency_overrides[security.get_current_user] = lambda: dict(TEST_USER)
 
+    # The stub user must exist as a real row (user_id FK on owned tables).
+    from app.db import get_connection, init_db
+
+    init_db()
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT INTO users (user_id, email, password_hash, full_name, role, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (user_id) DO NOTHING",
+            (
+                TEST_USER["user_id"],
+                TEST_USER["email"],
+                "not-a-real-hash",
+                TEST_USER["full_name"],
+                TEST_USER["role"],
+                TEST_USER["created_at"],
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
     try:
         yield tmp_path
     finally:

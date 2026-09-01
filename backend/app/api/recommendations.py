@@ -35,15 +35,15 @@ router = APIRouter(prefix="/recommendations", tags=["recommendations"], dependen
 call_llm = timed_stage("LLM recommendation")(call_llm)
 
 
-def _store_package(package_id: str, kpi_id: str, package: dict) -> str:
+def _store_package(package_id: str, kpi_id: str, package: dict, user_id: str = "") -> str:
     created_at = datetime.now(timezone.utc).isoformat()
     conn = get_connection()
     try:
         conn.execute(
             "INSERT OR REPLACE INTO recommendation_packages "
-            "(package_id, kpi_id, package_json, created_at) "
-            "VALUES (?, ?, ?, ?)",
-            (package_id, kpi_id, json.dumps(package, sort_keys=True), created_at),
+            "(package_id, kpi_id, user_id, package_json, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (package_id, kpi_id, user_id, json.dumps(package, sort_keys=True), created_at),
         )
         conn.commit()
     finally:
@@ -51,7 +51,7 @@ def _store_package(package_id: str, kpi_id: str, package: dict) -> str:
     return created_at
 
 
-def _load_stored_texts(kpi_id: str) -> dict:
+def _load_stored_texts(kpi_id: str, user_id: str = "") -> dict:
     """{package_hash: recommendation_text} cached for this KPI.
 
     The llm_calls table holds the cost ledger (schema per plan); the actual
@@ -62,8 +62,8 @@ def _load_stored_texts(kpi_id: str) -> dict:
     try:
         row = conn.execute(
             "SELECT package_json FROM recommendation_packages "
-            "WHERE kpi_id = ? AND package_id = ?",
-            (kpi_id, f"texts:{kpi_id}"),
+            "WHERE kpi_id = ? AND package_id = ? AND user_id = ?",
+            (kpi_id, f"texts:{kpi_id}", user_id),
         ).fetchone()
     finally:
         conn.close()
@@ -75,23 +75,25 @@ def _load_stored_texts(kpi_id: str) -> dict:
         return {}
 
 
-def _store_texts(kpi_id: str, texts: dict) -> None:
+def _store_texts(kpi_id: str, texts: dict, user_id: str = "") -> None:
     conn = get_connection()
     try:
         conn.execute(
             "INSERT OR REPLACE INTO recommendation_packages "
-            "(package_id, kpi_id, package_json, created_at) "
-            "VALUES (?, ?, ?, ?)",
-            (f"texts:{kpi_id}", kpi_id, json.dumps(texts), datetime.now(timezone.utc).isoformat()),
+            "(package_id, kpi_id, user_id, package_json, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (f"texts:{kpi_id}", kpi_id, user_id, json.dumps(texts), datetime.now(timezone.utc).isoformat()),
         )
         conn.commit()
     finally:
         conn.close()
 
 
-def _build_structured_package(kpi_id: str, persona_id: str | None) -> dict:
+def _build_structured_package(kpi_id: str, persona_id: str | None, current_user: dict = None) -> dict:
     """Phase 9 logic: top non-abstained finding -> seven-field package."""
-    drivers_response = get_drivers(kpi_id, refresh=False, persona_id=persona_id)
+    drivers_response = get_drivers(
+        kpi_id, refresh=False, persona_id=persona_id, current_user=current_user
+    )
 
     findings = [
         f for f in drivers_response.get("findings", [])
@@ -117,12 +119,13 @@ def _build_structured_package(kpi_id: str, persona_id: str | None) -> dict:
 
 
 @router.get("/{kpi_id}/package")
-def get_recommendation_package(kpi_id: str, persona_id: str | None = None) -> dict:
+def get_recommendation_package(kpi_id: str, persona_id: str | None = None, current_user: dict = Depends(get_current_user)) -> dict:
     """Build the structured recommendation package (deterministic, no LLM)."""
-    package = _build_structured_package(kpi_id, persona_id)
+    user_id = current_user["user_id"]
+    package = _build_structured_package(kpi_id, persona_id, current_user)
 
     package_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"package:{kpi_id}"))
-    created_at = _store_package(package_id, kpi_id, package)
+    created_at = _store_package(package_id, kpi_id, package, user_id)
 
     return {
         "package_id": package_id,
@@ -134,24 +137,25 @@ def get_recommendation_package(kpi_id: str, persona_id: str | None = None) -> di
 
 
 @router.get("/{kpi_id}")
-def get_recommendation(kpi_id: str, persona_id: str | None = None) -> dict:
+def get_recommendation(kpi_id: str, persona_id: str | None = None, current_user: dict = Depends(get_current_user)) -> dict:
     """LLM-phrased recommendation from the structured package (Phase 10).
 
     The ONLY endpoint that calls an LLM. Cache-first: an identical package
     (same hash) reuses the stored text with no API call. Every call — live
     or cached — is logged to llm_calls with tokens/latency/cost.
     """
-    package = _build_structured_package(kpi_id, persona_id)
+    user_id = current_user["user_id"]
+    package = _build_structured_package(kpi_id, persona_id, current_user)
     _store_package(
-        str(uuid.uuid5(uuid.NAMESPACE_URL, f"package:{kpi_id}")), kpi_id, package
+        str(uuid.uuid5(uuid.NAMESPACE_URL, f"package:{kpi_id}")), kpi_id, package, user_id
     )
 
     hash_value = package_hash(package, persona_id)
-    texts = _load_stored_texts(kpi_id)
-    cached_row = lookup_cached_call(hash_value)
+    texts = _load_stored_texts(kpi_id, user_id)
+    cached_row = lookup_cached_call(hash_value, user_id)
 
     if cached_row is not None and hash_value in texts:
-        metadata = log_llm_call(kpi_id, hash_value, cached_row, cached=True)
+        metadata = log_llm_call(kpi_id, hash_value, cached_row, cached=True, user_id=user_id)
         return {
             "kpi_id": kpi_id,
             "persona_id": persona_id,
@@ -166,9 +170,9 @@ def get_recommendation(kpi_id: str, persona_id: str | None = None) -> dict:
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    metadata = log_llm_call(kpi_id, hash_value, result, cached=False)
+    metadata = log_llm_call(kpi_id, hash_value, result, cached=False, user_id=user_id)
     texts[hash_value] = result["text"]
-    _store_texts(kpi_id, texts)
+    _store_texts(kpi_id, texts, user_id)
 
     return {
         "kpi_id": kpi_id,

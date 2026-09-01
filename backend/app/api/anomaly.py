@@ -14,24 +14,27 @@ from app.api.integrations import apply_confidence, apply_persona
 from app.core.anomaly.detectors import run_all_detectors
 from app.db import get_connection
 from app.core.auth.security import get_current_user
+from app.core.errors import not_found
 
 router = APIRouter(prefix="/anomaly", tags=["anomaly"], dependencies=[Depends(get_current_user)])
 
 
-def _get_kpi_and_computation(kpi_id: str):
+def _get_kpi_and_computation(kpi_id: str, user_id: str):
     conn = get_connection()
     try:
         kpi_row = conn.execute(
-            "SELECT definition_json FROM kpis WHERE kpi_id = ?", (kpi_id,)
+            "SELECT definition_json FROM kpis WHERE kpi_id = ? AND user_id = ?",
+            (kpi_id, user_id),
         ).fetchone()
         comp_row = conn.execute(
-            "SELECT computation_json, computed_at FROM kpi_computations WHERE kpi_id = ?",
-            (kpi_id,),
+            "SELECT computation_json, computed_at FROM kpi_computations "
+            "WHERE kpi_id = ? AND user_id = ?",
+            (kpi_id, user_id),
         ).fetchone()
     finally:
         conn.close()
     if kpi_row is None:
-        raise HTTPException(status_code=404, detail=f"KPI {kpi_id} not found.")
+        raise not_found(f"KPI {kpi_id}")
     if comp_row is None:
         raise HTTPException(
             status_code=409,
@@ -117,21 +120,23 @@ def _build_anomaly_findings(
 
 
 @router.get("/{kpi_id}")
-def get_anomalies(kpi_id: str, refresh: bool = False, persona_id: str | None = None) -> dict:
+def get_anomalies(kpi_id: str, refresh: bool = False, persona_id: str | None = None, current_user: dict = Depends(get_current_user)) -> dict:
     """Run detectors on the KPI's computed trend; return + cache per KPI.
 
     Cached result is returned unless ?refresh=true (re-runs and overwrites).
     Every detection carries a confidence level; abstain-level detections are
     replaced by an honest message. persona_id filters per access rules.
     """
-    definition, computation = _get_kpi_and_computation(kpi_id)
+    user_id = current_user["user_id"]
+    definition, computation = _get_kpi_and_computation(kpi_id, user_id)
 
     if not refresh:
         conn = get_connection()
         try:
             cached = conn.execute(
-                "SELECT anomaly_json, detected_at FROM anomalies WHERE kpi_id = ?",
-                (kpi_id,),
+                "SELECT anomaly_json, detected_at FROM anomalies "
+                "WHERE kpi_id = ? AND user_id = ?",
+                (kpi_id, user_id),
             ).fetchone()
         finally:
             conn.close()
@@ -176,9 +181,9 @@ def get_anomalies(kpi_id: str, refresh: bool = False, persona_id: str | None = N
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT OR REPLACE INTO anomalies (kpi_id, anomaly_json, detected_at) "
-            "VALUES (?, ?, ?)",
-            (kpi_id, json.dumps(flagged), detected_at),
+            "INSERT OR REPLACE INTO anomalies (kpi_id, user_id, anomaly_json, detected_at) "
+            "VALUES (?, ?, ?, ?)",
+            (kpi_id, user_id, json.dumps(flagged), detected_at),
         )
         conn.commit()
     finally:

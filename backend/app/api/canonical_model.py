@@ -14,6 +14,7 @@ from app.core.canonical.reconciler import align_grain, reconcile
 from app.core.ingestion.loaders import load_source
 from app.db import get_connection
 from app.core.auth.security import get_current_user
+from app.core.errors import not_found
 
 router = APIRouter(prefix="/canonical", tags=["canonical"], dependencies=[Depends(get_current_user)])
 
@@ -32,17 +33,18 @@ class BuildRequest(BaseModel):
     target_cadence: str | None = None
 
 
-def _load_source_row(source_id: str) -> dict:
+def _load_source_row(source_id: str, user_id: str) -> dict:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT source_id, filename, grain, cadence FROM sources WHERE source_id = ?",
-            (source_id,),
+            "SELECT source_id, filename, grain, cadence FROM sources "
+            "WHERE source_id = ? AND user_id = ?",
+            (source_id, user_id),
         ).fetchone()
     finally:
         conn.close()
     if row is None:
-        raise HTTPException(status_code=404, detail=f"Source {source_id} not found.")
+        raise not_found(f"Source {source_id}")
     return dict(row)
 
 
@@ -50,7 +52,7 @@ def _load_df(source_id: str) -> pd.DataFrame:
     uploads_dir = Path(settings.UPLOADS_DIR) / source_id
     files = sorted(uploads_dir.glob("source.*"))
     if not files:
-        raise HTTPException(status_code=404, detail=f"No raw file for source {source_id}.")
+        raise not_found(f"Raw file for source {source_id}")
     ext = files[0].suffix.lower().lstrip(".")
     try:
         return load_source(files[0], ext)
@@ -82,7 +84,7 @@ def _load_canonical_csv(dataset_id: str) -> pd.DataFrame:
 
     path = _canonical_dir() / f"{dataset_id}.csv"
     if not path.exists():
-        raise HTTPException(status_code=404, detail=f"Canonical dataset {dataset_id} not found.")
+        raise not_found(f"Canonical dataset {dataset_id}")
     try:
         return _safe_load(path)
     except ValueError as exc:
@@ -90,7 +92,7 @@ def _load_canonical_csv(dataset_id: str) -> pd.DataFrame:
 
 
 @router.post("/build")
-def build_canonical(req: BuildRequest) -> dict:
+def build_canonical(req: BuildRequest, current_user: dict = Depends(get_current_user)) -> dict:
     """Reconcile 2+ sources into a stored canonical dataset; return id + first 20 rows."""
     if len(req.source_ids) < 2:
         raise HTTPException(status_code=422, detail="Need at least two source_ids to reconcile.")
@@ -99,7 +101,7 @@ def build_canonical(req: BuildRequest) -> dict:
 
     sources_meta = []
     for idx, source_id in enumerate(req.source_ids):
-        meta = _load_source_row(source_id)
+        meta = _load_source_row(source_id, current_user["user_id"])
         meta["df"] = _load_df(source_id)
         meta["index"] = idx
         sources_meta.append(meta)
@@ -136,10 +138,11 @@ def build_canonical(req: BuildRequest) -> dict:
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO canonical_datasets (dataset_id, source_ids, join_config_json, created_at) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO canonical_datasets (dataset_id, user_id, source_ids, join_config_json, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
             (
                 dataset_id,
+                current_user["user_id"],
                 json.dumps(req.source_ids),
                 json.dumps(join_config),
                 created_at,
@@ -160,19 +163,19 @@ def build_canonical(req: BuildRequest) -> dict:
 
 
 @router.get("/{dataset_id}/preview")
-def preview_canonical(dataset_id: str, page: int = 1) -> dict:
+def preview_canonical(dataset_id: str, page: int = 1, current_user: dict = Depends(get_current_user)) -> dict:
     """Paginated preview (20 rows/page) of a stored canonical dataset."""
     conn = get_connection()
     try:
         row = conn.execute(
             "SELECT dataset_id, source_ids, join_config_json, created_at "
-            "FROM canonical_datasets WHERE dataset_id = ?",
-            (dataset_id,),
+            "FROM canonical_datasets WHERE dataset_id = ? AND user_id = ?",
+            (dataset_id, current_user["user_id"]),
         ).fetchone()
     finally:
         conn.close()
     if row is None:
-        raise HTTPException(status_code=404, detail=f"Canonical dataset {dataset_id} not found.")
+        raise not_found(f"Canonical dataset {dataset_id}")
 
     df = _load_canonical_csv(dataset_id)
     page = max(1, page)
@@ -195,7 +198,7 @@ def preview_canonical(dataset_id: str, page: int = 1) -> dict:
 
 
 @router.delete("/{dataset_id}")
-def delete_canonical(dataset_id: str) -> dict:
+def delete_canonical(dataset_id: str, current_user: dict = Depends(get_current_user)) -> dict:
     """Delete a canonical dataset and everything derived from it.
 
     Cascade (one DB transaction): the dataset row, its KPIs, and each KPI's
@@ -207,11 +210,12 @@ def delete_canonical(dataset_id: str) -> dict:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT dataset_id FROM canonical_datasets WHERE dataset_id = ?",
-            (dataset_id,),
+            "SELECT dataset_id FROM canonical_datasets "
+            "WHERE dataset_id = ? AND user_id = ?",
+            (dataset_id, current_user["user_id"]),
         ).fetchone()
         if row is None:
-            raise HTTPException(status_code=404, detail=f"Canonical dataset {dataset_id} not found.")
+            raise not_found(f"Canonical dataset {dataset_id}")
 
         kpi_ids = [
             r["kpi_id"]

@@ -11,37 +11,40 @@ from app.core.ingestion.loaders import load_source
 from app.core.profiling.profiler import profile_dataframe
 from app.db import get_connection
 from app.core.auth.security import get_current_user
+from app.core.errors import not_found
 
 router = APIRouter(prefix="/profiling", tags=["profiling"], dependencies=[Depends(get_current_user)])
 
 
-def _get_source(source_id: str) -> dict:
+def _get_source(source_id: str, user_id: str) -> dict:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT source_id, filename, grain, cadence, uploaded_at FROM sources WHERE source_id = ?",
-            (source_id,),
+            "SELECT source_id, filename, grain, cadence, uploaded_at FROM sources "
+            "WHERE source_id = ? AND user_id = ?",
+            (source_id, user_id),
         ).fetchone()
     finally:
         conn.close()
     if row is None:
-        raise HTTPException(status_code=404, detail=f"Source {source_id} not found.")
+        raise not_found(f"Source {source_id}")
     return dict(row)
 
 
 @router.get("/{source_id}")
-def get_profile(source_id: str) -> dict:
+def get_profile(source_id: str, current_user: dict = Depends(get_current_user)) -> dict:
     """Load the source's raw file, run profile_dataframe, cache and return it.
 
     Returns the cached result if this source was already profiled.
     """
-    source = _get_source(source_id)
+    source = _get_source(source_id, current_user["user_id"])
 
     conn = get_connection()
     try:
         cached = conn.execute(
-            "SELECT profile_json, created_at FROM profiles WHERE source_id = ?",
-            (source_id,),
+            "SELECT profile_json, created_at FROM profiles "
+            "WHERE source_id = ? AND user_id = ?",
+            (source_id, current_user["user_id"]),
         ).fetchone()
     finally:
         conn.close()
@@ -57,7 +60,7 @@ def get_profile(source_id: str) -> dict:
     uploads_dir = Path(settings.UPLOADS_DIR) / source_id
     files = sorted(uploads_dir.glob("source.*"))
     if not files:
-        raise HTTPException(status_code=404, detail=f"No raw file found for source {source_id}.")
+        raise not_found(f"Raw file for source {source_id}")
     ext = files[0].suffix.lower().lstrip(".")
     try:
         df = load_source(files[0], ext)
@@ -73,8 +76,9 @@ def get_profile(source_id: str) -> dict:
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO profiles (source_id, profile_json, created_at) VALUES (?, ?, ?)",
-            (source_id, profile_json, created_at),
+            "INSERT INTO profiles (source_id, user_id, profile_json, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (source_id, current_user["user_id"], profile_json, created_at),
         )
         conn.commit()
     finally:

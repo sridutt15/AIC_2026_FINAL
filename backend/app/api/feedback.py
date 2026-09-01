@@ -22,7 +22,7 @@ class FeedbackRequest(BaseModel):
 
 
 @router.post("")
-def post_feedback(req: FeedbackRequest) -> dict:
+def post_feedback(req: FeedbackRequest, current_user: dict = Depends(get_current_user)) -> dict:
     """Record one analyst verdict; returns the stored row."""
     try:
         row = record_feedback(
@@ -31,6 +31,7 @@ def post_feedback(req: FeedbackRequest) -> dict:
             verdict=req.verdict,
             note=req.note,
             driver_type=req.driver_type,
+            user_id=current_user["user_id"],
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -38,12 +39,15 @@ def post_feedback(req: FeedbackRequest) -> dict:
 
 
 @router.get("/recent")
-def list_recent_feedback(limit: int = 20) -> dict:
-    """Most recent feedback rows (for the Feedback page list)."""
-    return {"feedback": recent_feedback(limit)}
+def list_recent_feedback(limit: int = 20, current_user: dict = Depends(get_current_user)) -> dict:
+    """Most recent feedback rows (current user's only, for the Feedback page)."""
+    return {"feedback": recent_feedback(limit, current_user["user_id"])}
 
 
 @router.get("/{target_id}")
-def get_feedback_for_target(target_id: str) -> dict:
-    """All feedback for one target, newest first."""
-    return {"target_id": target_id, "feedback": get_feedback(target_id)}
+def get_feedback_for_target(target_id: str, current_user: dict = Depends(get_current_user)) -> dict:
+    """All feedback for one target (current user's only), newest first."""
+    return {
+        "target_id": target_id,
+        "feedback": get_feedback(target_id, current_user["user_id"]),
+    }

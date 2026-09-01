@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.db import get_connection, init_db
 from app.main import app
+from tests.conftest import TEST_USER
 
 
 def _seed_llm_calls(rows: list) -> None:
@@ -14,12 +15,13 @@ def _seed_llm_calls(rows: list) -> None:
     try:
         for i, (prompt_tok, comp_tok, latency, cost, cached) in enumerate(rows):
             conn.execute(
-                "INSERT INTO llm_calls (call_id, kpi_id, package_hash, prompt_tokens, "
+                "INSERT INTO llm_calls (call_id, kpi_id, user_id, package_hash, prompt_tokens, "
                 "completion_tokens, latency_ms, cost_usd, cached, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     f"call-{i}",
                     "kpi-x",
+                    TEST_USER["user_id"],
                     f"hash-{i}",
                     prompt_tok,
                     comp_tok,
@@ -71,9 +73,9 @@ def test_stage_timings_appear_in_summary(isolated_env):
     try:
         for latency in (100, 200, 300):
             conn.execute(
-                "INSERT INTO stage_timings (stage, latency_ms, recorded_at) "
-                "VALUES (?, ?, ?)",
-                ("driver analysis", latency, datetime.now(timezone.utc).isoformat()),
+                "INSERT INTO stage_timings (stage, user_id, latency_ms, recorded_at) "
+                "VALUES (?, ?, ?, ?)",
+                ("driver analysis", TEST_USER["user_id"], latency, datetime.now(timezone.utc).isoformat()),
             )
         conn.commit()
     finally:
@@ -118,9 +120,9 @@ def test_summary_includes_feedback_adjustments(isolated_env):
 
     record_feedback(
         target_type="recommendation", target_id="t1",
-        verdict="reject", driver_type="mix",
+        verdict="reject", driver_type="mix", user_id=TEST_USER["user_id"],
     )
-    apply_feedback_adjustments()
+    apply_feedback_adjustments(TEST_USER["user_id"])
     with TestClient(app) as client:
         summary = client.get("/telemetry/summary").json()
     assert summary["feedback_adjustments"] == {"mix": 0.85}

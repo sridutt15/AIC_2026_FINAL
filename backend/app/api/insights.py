@@ -36,28 +36,28 @@ def _persona_name(persona_id: str | None) -> str | None:
     return persona["name"] if persona else None
 
 
-def _previous_insight(kpi_id: str, persona_id: str | None) -> str | None:
+def _previous_insight(kpi_id: str, persona_id: str | None, user_id: str = "") -> str | None:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT text FROM insights WHERE kpi_id = ? AND persona_id IS ? "
+            "SELECT text FROM insights WHERE kpi_id = ? AND persona_id IS ? AND user_id = ? "
             "ORDER BY generated_at DESC LIMIT 1",
-            (kpi_id, persona_id),
+            (kpi_id, persona_id, user_id),
         ).fetchone()
     finally:
         conn.close()
     return row["text"] if row else None
 
 
-def _store_insight(insight_id: str, kpi_id: str, persona_id: str | None, text: str) -> str:
+def _store_insight(insight_id: str, kpi_id: str, persona_id: str | None, text: str, user_id: str = "") -> str:
     generated_at = datetime.now(timezone.utc).isoformat()
     conn = get_connection()
     try:
         conn.execute(
             "INSERT OR REPLACE INTO insights "
-            "(insight_id, kpi_id, persona_id, text, generated_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (insight_id, kpi_id, persona_id, text, generated_at),
+            "(insight_id, kpi_id, user_id, persona_id, text, generated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (insight_id, kpi_id, user_id, persona_id, text, generated_at),
         )
         conn.commit()
     finally:
@@ -66,12 +66,13 @@ def _store_insight(insight_id: str, kpi_id: str, persona_id: str | None, text: s
 
 
 @router.get("/{kpi_id}")
-def get_insight(kpi_id: str, persona_id: str | None = None, refresh: bool = False) -> dict:
+def get_insight(kpi_id: str, persona_id: str | None = None, refresh: bool = False, current_user: dict = Depends(get_current_user)) -> dict:
     """Generate (or return cached) deterministic insight text for a KPI."""
+    user_id = current_user["user_id"]
     # The drivers endpoint does the full pipeline: decomposition, evidence,
     # confidence, persona filtering. Reuse it so insights never diverge from
     # the findings they describe.
-    drivers_response = get_drivers(kpi_id, refresh=refresh, persona_id=persona_id)
+    drivers_response = get_drivers(kpi_id, refresh=refresh, persona_id=persona_id, current_user=current_user)
     definition = drivers_response.get("definition") or {}
     kpi_name = definition.get("name") or kpi_id
 
@@ -138,11 +139,11 @@ def get_insight(kpi_id: str, persona_id: str | None = None, refresh: bool = Fals
 
     # Read the previously stored text BEFORE overwriting, so the UI's
     # regenerate diff-check has both outputs.
-    previous = _previous_insight(kpi_id, persona_id)
+    previous = _previous_insight(kpi_id, persona_id, user_id)
     insight_id = str(
         uuid.uuid5(uuid.NAMESPACE_URL, f"insight:{kpi_id}:{persona_id or 'default'}")
     )
-    generated_at = _store_insight(insight_id, kpi_id, persona_id, text)
+    generated_at = _store_insight(insight_id, kpi_id, persona_id, text, user_id)
 
     return {
         "insight_id": insight_id,

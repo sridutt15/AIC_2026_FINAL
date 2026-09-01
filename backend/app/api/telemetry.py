@@ -41,18 +41,23 @@ STAGE_LEDGER = [
 
 
 @router.get("/llm-ledger")
-def llm_ledger() -> dict:
+def llm_ledger(current_user: dict = Depends(get_current_user)) -> dict:
     """The documented stage-by-stage LLM usage table + last call metadata."""
     conn = get_connection()
     try:
         row = conn.execute(
             "SELECT call_id, kpi_id, prompt_tokens, completion_tokens, "
             "latency_ms, cost_usd, cached, created_at FROM llm_calls "
-            "ORDER BY created_at DESC LIMIT 1"
+            "WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+            (current_user["user_id"],),
         ).fetchone()
-        n_calls = conn.execute("SELECT COUNT(*) AS n FROM llm_calls").fetchone()["n"]
+        n_calls = conn.execute(
+            "SELECT COUNT(*) AS n FROM llm_calls WHERE user_id = ?",
+            (current_user["user_id"],),
+        ).fetchone()["n"]
         total_cost = conn.execute(
-            "SELECT COALESCE(SUM(cost_usd), 0.0) AS c FROM llm_calls"
+            "SELECT COALESCE(SUM(cost_usd), 0.0) AS c FROM llm_calls WHERE user_id = ?",
+            (current_user["user_id"],),
         ).fetchone()["c"]
     finally:
         conn.close()
@@ -83,11 +88,11 @@ def llm_ledger() -> dict:
 
 
 @router.get("/summary")
-def telemetry_summary() -> dict:
+def telemetry_summary(current_user: dict = Depends(get_current_user)) -> dict:
     """Aggregated operations telemetry: latency, LLM usage, cost, cache rate.
 
-    All numbers come from the llm_calls + stage_timings tables (real logged
-    data). Cache hit rate = cached rows / total rows over llm_calls.
+    All numbers come from the current user's llm_calls + stage_timings rows
+    (real logged data). Cache hit rate = cached rows / total rows over llm_calls.
     """
     conn = get_connection()
     try:
@@ -98,11 +103,13 @@ def telemetry_summary() -> dict:
             "COALESCE(SUM(cost_usd), 0.0) AS cost_usd, "
             "COALESCE(SUM(CASE WHEN cached = 1 THEN 1 ELSE 0 END), 0) AS cached_n, "
             "COALESCE(AVG(latency_ms), 0.0) AS avg_latency_ms "
-            "FROM llm_calls"
+            "FROM llm_calls WHERE user_id = ?",
+            (current_user["user_id"],),
         ).fetchone()
         llm_calls_over_time = conn.execute(
             "SELECT created_at, prompt_tokens, completion_tokens, cost_usd, cached "
-            "FROM llm_calls ORDER BY created_at ASC"
+            "FROM llm_calls WHERE user_id = ? ORDER BY created_at ASC",
+            (current_user["user_id"],),
         ).fetchall()
     finally:
         conn.close()
@@ -112,7 +119,7 @@ def telemetry_summary() -> dict:
     cache_hit_rate = round(cached_n / n_calls, 4) if n_calls else 0.0
 
     return {
-        "stage_latencies": stage_latency_summary(),
+        "stage_latencies": stage_latency_summary(current_user["user_id"]),
         "llm": {
             "total_calls": n_calls,
             "total_prompt_tokens": int(agg["prompt_tokens"]),
@@ -132,5 +139,5 @@ def telemetry_summary() -> dict:
             }
             for r in llm_calls_over_time
         ],
-        "feedback_adjustments": apply_feedback_adjustments()["adjustments"],
+        "feedback_adjustments": apply_feedback_adjustments(current_user["user_id"])["adjustments"],
     }

@@ -27,7 +27,7 @@ def package_hash(package: dict, persona_id: str | None = None) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def lookup_cached_call(package_hash_value: str) -> dict | None:
+def lookup_cached_call(package_hash_value: str, user_id: str = "") -> dict | None:
     """Find the newest llm_calls row for a package hash; None if absent.
 
     The ORIGINAL live call (cached=0) is the row whose result we reuse; a
@@ -40,9 +40,9 @@ def lookup_cached_call(package_hash_value: str) -> dict | None:
         row = conn.execute(
             "SELECT call_id, package_hash, prompt_tokens, completion_tokens, "
             "latency_ms, cost_usd, cached, created_at FROM llm_calls "
-            "WHERE package_hash = ? AND cached = 0 "
+            "WHERE package_hash = ? AND cached = 0 AND user_id = ? "
             "ORDER BY created_at DESC LIMIT 1",
-            (package_hash_value,),
+            (package_hash_value, user_id),
         ).fetchone()
     finally:
         conn.close()
@@ -65,6 +65,7 @@ def log_llm_call(
     package_hash_value: str,
     result: dict,
     cached: bool,
+    user_id: str = "",
 ) -> dict:
     """Persist one llm_calls row (a live call or a cache hit) and return it.
 
@@ -83,12 +84,13 @@ def log_llm_call(
     try:
         conn.execute(
             "INSERT INTO llm_calls "
-            "(call_id, kpi_id, package_hash, prompt_tokens, completion_tokens, "
+            "(call_id, kpi_id, user_id, package_hash, prompt_tokens, completion_tokens, "
             "latency_ms, cost_usd, cached, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 call_id,
                 kpi_id,
+                user_id,
                 package_hash_value,
                 int(result.get("prompt_tokens") or 0),
                 int(result.get("completion_tokens") or 0),

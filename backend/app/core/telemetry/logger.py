@@ -17,7 +17,7 @@ import time
 from datetime import datetime, timezone
 
 
-def _record(stage: str, latency_ms: int) -> None:
+def _record(stage: str, latency_ms: int, user_id: str = "") -> None:
     """Persist one stage timing row (best-effort: never break the caller)."""
     try:
         from app.db import get_connection, init_db
@@ -26,9 +26,9 @@ def _record(stage: str, latency_ms: int) -> None:
         conn = get_connection()
         try:
             conn.execute(
-                "INSERT INTO stage_timings (stage, latency_ms, recorded_at) "
-                "VALUES (?, ?, ?)",
-                (stage, int(latency_ms), datetime.now(timezone.utc).isoformat()),
+                "INSERT INTO stage_timings (stage, user_id, latency_ms, recorded_at) "
+                "VALUES (?, ?, ?, ?)",
+                (stage, user_id, int(latency_ms), datetime.now(timezone.utc).isoformat()),
             )
             conn.commit()
         finally:
@@ -38,24 +38,33 @@ def _record(stage: str, latency_ms: int) -> None:
 
 
 def timed_stage(stage: str):
-    """Decorator: record the wrapped function's wall-clock latency per call."""
+    """Decorator: record the wrapped function's wall-clock latency per call.
+
+    Passes through a `user_id` kwarg (when the caller provides one) so each
+    timing row is owned by the user whose request caused it.
+    """
 
     def decorator(func):
+        import inspect
+
+        accepts_user_id = "user_id" in inspect.signature(func).parameters
+
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             started = time.perf_counter()
+            user_id = kwargs.pop("user_id", "") if not accepts_user_id else kwargs.get("user_id", "")
             try:
                 return func(*args, **kwargs)
             finally:
-                _record(stage, (time.perf_counter() - started) * 1000.0)
+                _record(stage, (time.perf_counter() - started) * 1000.0, user_id)
 
         return wrapper
 
     return decorator
 
 
-def stage_latency_summary() -> list:
-    """Average + count latency per stage, from the stage_timings table."""
+def stage_latency_summary(user_id: str = "") -> list:
+    """Average + count latency per stage (current user's rows only)."""
     from app.db import get_connection
 
     conn = get_connection()
@@ -63,7 +72,8 @@ def stage_latency_summary() -> list:
         rows = conn.execute(
             "SELECT stage, COUNT(*) AS n, AVG(latency_ms) AS avg_ms, "
             "MIN(latency_ms) AS min_ms, MAX(latency_ms) AS max_ms "
-            "FROM stage_timings GROUP BY stage ORDER BY avg_ms DESC"
+            "FROM stage_timings WHERE user_id = ? GROUP BY stage ORDER BY avg_ms DESC",
+            (user_id,),
         ).fetchall()
     finally:
         conn.close()

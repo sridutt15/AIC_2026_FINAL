@@ -11,6 +11,7 @@ from app.core.ingestion.loaders import load_source
 from app.core.quality.report_builder import build_quality_report
 from app.db import get_connection
 from app.core.auth.security import get_current_user
+from app.core.errors import not_found
 
 router = APIRouter(prefix="/data-quality", tags=["data-quality"], dependencies=[Depends(get_current_user)])
 
@@ -20,7 +21,7 @@ def _load_df(source_id: str):
     uploads_dir = Path(settings.UPLOADS_DIR) / source_id
     files = sorted(uploads_dir.glob("source.*"))
     if not files:
-        raise HTTPException(status_code=404, detail=f"No raw file found for source {source_id}.")
+        raise not_found(f"Raw file for source {source_id}")
     ext = files[0].suffix.lower().lstrip(".")
     try:
         return load_source(files[0], ext)
@@ -28,11 +29,12 @@ def _load_df(source_id: str):
         raise HTTPException(status_code=400, detail=f"Failed to load file: {exc}") from exc
 
 
-def _load_profile_json(source_id: str) -> dict | None:
+def _load_profile_json(source_id: str, user_id: str) -> dict | None:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT profile_json FROM profiles WHERE source_id = ?", (source_id,)
+            "SELECT profile_json FROM profiles WHERE source_id = ? AND user_id = ?",
+            (source_id, user_id),
         ).fetchone()
     finally:
         conn.close()
@@ -40,13 +42,15 @@ def _load_profile_json(source_id: str) -> dict | None:
 
 
 @router.get("/{source_id}")
-def get_quality_report(source_id: str) -> dict:
+def get_quality_report(source_id: str, current_user: dict = Depends(get_current_user)) -> dict:
     """Build the quality report on first call; return the stored one afterwards."""
+    user_id = current_user["user_id"]
     conn = get_connection()
     try:
         cached = conn.execute(
-            "SELECT report_json, created_at FROM quality_reports WHERE source_id = ?",
-            (source_id,),
+            "SELECT report_json, created_at FROM quality_reports "
+            "WHERE source_id = ? AND user_id = ?",
+            (source_id, user_id),
         ).fetchone()
     finally:
         conn.close()
@@ -62,16 +66,18 @@ def get_quality_report(source_id: str) -> dict:
     conn = get_connection()
     try:
         source = conn.execute(
-            "SELECT source_id, filename FROM sources WHERE source_id = ?", (source_id,)
+            "SELECT source_id, filename FROM sources WHERE source_id = ? AND user_id = ?",
+            (source_id, user_id),
         ).fetchone()
         contract_row = conn.execute(
-            "SELECT contract_json FROM semantic_contracts WHERE source_id = ?",
-            (source_id,),
+            "SELECT contract_json FROM semantic_contracts "
+            "WHERE source_id = ? AND user_id = ?",
+            (source_id, user_id),
         ).fetchone()
     finally:
         conn.close()
     if source is None:
-        raise HTTPException(status_code=404, detail=f"Source {source_id} not found.")
+        raise not_found(f"Source {source_id}")
     if contract_row is None:
         raise HTTPException(
             status_code=409,
@@ -80,15 +86,16 @@ def get_quality_report(source_id: str) -> dict:
 
     df = _load_df(source_id)
     contract = json.loads(contract_row["contract_json"])
-    profile = _load_profile_json(source_id)
+    profile = _load_profile_json(source_id, user_id)
 
     report = build_quality_report(df, contract, profile)
     created_at = datetime.now(timezone.utc).isoformat()
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO quality_reports (source_id, report_json, created_at) VALUES (?, ?, ?)",
-            (source_id, json.dumps(report), created_at),
+            "INSERT INTO quality_reports (source_id, user_id, report_json, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (source_id, user_id, json.dumps(report), created_at),
         )
         conn.commit()
     finally:

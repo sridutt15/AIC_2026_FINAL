@@ -41,6 +41,7 @@ def record_feedback(
     verdict: str,
     note: str | None = None,
     driver_type: str | None = None,
+    user_id: str = "",
 ) -> dict:
     """Store one feedback row. target_type: 'insight' | 'recommendation'.
 
@@ -55,7 +56,7 @@ def record_feedback(
         raise ValueError(f"verdict must be one of {VERDICTS}")
 
     if driver_type is None:
-        driver_type = infer_driver_type_for_target(target_id)
+        driver_type = infer_driver_type_for_target(target_id, user_id)
 
     from app.db import get_connection
 
@@ -64,9 +65,9 @@ def record_feedback(
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO feedback (feedback_id, target_type, target_id, verdict, note, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (feedback_id, target_type, target_id, verdict, note, created_at),
+            "INSERT INTO feedback (feedback_id, user_id, target_type, target_id, verdict, note, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (feedback_id, user_id, target_type, target_id, verdict, note, created_at),
         )
         # Persist the resolved driver type so apply_feedback_adjustments()
         # never has to re-infer it (deterministic + auditable).
@@ -89,39 +90,40 @@ def record_feedback(
     }
 
 
-def get_feedback(target_id: str) -> list:
-    """All feedback rows for a target, newest first."""
+def get_feedback(target_id: str, user_id: str = "") -> list:
+    """All feedback rows for a target (current user's only), newest first."""
     from app.db import get_connection
 
     conn = get_connection()
     try:
         rows = conn.execute(
             "SELECT feedback_id, target_type, target_id, verdict, note, created_at "
-            "FROM feedback WHERE target_id = ? ORDER BY created_at DESC",
-            (target_id,),
+            "FROM feedback WHERE target_id = ? AND user_id = ? "
+            "ORDER BY created_at DESC",
+            (target_id, user_id),
         ).fetchall()
     finally:
         conn.close()
     return [dict(r) for r in rows]
 
 
-def recent_feedback(limit: int = 20) -> list:
-    """Most recent feedback rows across all targets (for the UI list)."""
+def recent_feedback(limit: int = 20, user_id: str = "") -> list:
+    """Most recent feedback rows for the current user, across all their targets."""
     from app.db import get_connection
 
     conn = get_connection()
     try:
         rows = conn.execute(
             "SELECT feedback_id, target_type, target_id, verdict, note, created_at "
-            "FROM feedback ORDER BY created_at DESC LIMIT ?",
-            (int(limit),),
+            "FROM feedback WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+            (user_id, int(limit)),
         ).fetchall()
     finally:
         conn.close()
     return [dict(r) for r in rows]
 
 
-def infer_driver_type_for_target(target_id: str) -> str:
+def infer_driver_type_for_target(target_id: str, user_id: str = "") -> str:
     """Infer the driver type for a feedback target from its stored finding.
 
     Insight/recommendation targets are KPI-scoped: look up the KPI's stored
@@ -134,9 +136,9 @@ def infer_driver_type_for_target(target_id: str) -> str:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT finding_json FROM findings WHERE kpi_id = ? "
+            "SELECT finding_json FROM findings WHERE kpi_id = ? AND user_id = ? "
             "ORDER BY created_at DESC LIMIT 5",
-            (target_id,),
+            (target_id, user_id),
         ).fetchall()
     finally:
         conn.close()
@@ -153,7 +155,7 @@ def infer_driver_type_for_target(target_id: str) -> str:
     return "other"
 
 
-def apply_feedback_adjustments() -> dict:
+def apply_feedback_adjustments(user_id: str = "") -> dict:
     """Recompute per-driver-type weight multipliers from the feedback history.
 
     Deterministic rule (see module docstring):
@@ -169,7 +171,8 @@ def apply_feedback_adjustments() -> dict:
         rows = conn.execute(
             "SELECT f.verdict AS verdict, m.driver_type AS driver_type "
             "FROM feedback f LEFT JOIN feedback_meta m ON f.feedback_id = m.feedback_id "
-            "ORDER BY f.created_at ASC"
+            "WHERE f.user_id = ? ORDER BY f.created_at ASC",
+            (user_id,),
         ).fetchall()
     finally:
         conn.close()

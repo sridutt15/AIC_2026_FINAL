@@ -16,6 +16,7 @@ from app.db import get_connection
 
 from .kpi import _load_canonical_df, _load_contracts, _load_dataset_row
 from app.core.auth.security import get_current_user
+from app.core.errors import not_found
 
 router = APIRouter(prefix="/drivers", tags=["drivers"], dependencies=[Depends(get_current_user)])
 
@@ -23,25 +24,27 @@ router = APIRouter(prefix="/drivers", tags=["drivers"], dependencies=[Depends(ge
 decompose_contribution = timed_stage("driver analysis")(decompose_contribution)
 
 
-def _get_kpi(kpi_id: str) -> dict:
+def _get_kpi(kpi_id: str, user_id: str) -> dict:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT definition_json FROM kpis WHERE kpi_id = ?", (kpi_id,)
+            "SELECT definition_json FROM kpis WHERE kpi_id = ? AND user_id = ?",
+            (kpi_id, user_id),
         ).fetchone()
     finally:
         conn.close()
     if row is None:
-        raise HTTPException(status_code=404, detail=f"KPI {kpi_id} not found.")
+        raise not_found(f"KPI {kpi_id}")
     return json.loads(row["definition_json"])
 
 
-def _get_computation(kpi_id: str) -> dict:
+def _get_computation(kpi_id: str, user_id: str) -> dict:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT computation_json FROM kpi_computations WHERE kpi_id = ?",
-            (kpi_id,),
+            "SELECT computation_json FROM kpi_computations "
+            "WHERE kpi_id = ? AND user_id = ?",
+            (kpi_id, user_id),
         ).fetchone()
     finally:
         conn.close()
@@ -52,16 +55,16 @@ def _get_computation(kpi_id: str) -> dict:
     return json.loads(row["computation_json"])
 
 
-def _source_freshness(dataset_id: str) -> str:
+def _source_freshness(dataset_id: str, user_id: str) -> str:
     """Latest uploaded_at among the dataset's sources (ISO string)."""
-    dataset = _load_dataset_row(dataset_id)
+    dataset = _load_dataset_row(dataset_id, user_id)
     conn = get_connection()
     try:
         rows = conn.execute(
             "SELECT uploaded_at FROM sources WHERE source_id IN "
-            f"({','.join('?' * len(dataset['source_ids']))}) "
+            f"({','.join('?' * len(dataset['source_ids']))}) AND user_id = ? "
             "ORDER BY uploaded_at DESC",
-            dataset["source_ids"],
+            (*dataset["source_ids"], user_id),
         ).fetchall()
     finally:
         conn.close()
@@ -73,6 +76,7 @@ def _store_finding(
     finding_type: str,
     finding: dict,
     evidence: dict,
+    user_id: str = "",
 ) -> dict:
     finding_id = str(
         uuid.uuid5(uuid.NAMESPACE_URL, f"finding:{kpi_id}:{finding_type}:{finding.get('key')}")
@@ -82,11 +86,12 @@ def _store_finding(
     try:
         conn.execute(
             "INSERT OR REPLACE INTO findings "
-            "(finding_id, kpi_id, finding_type, finding_json, evidence_json, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "(finding_id, kpi_id, user_id, finding_type, finding_json, evidence_json, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 finding_id,
                 kpi_id,
+                user_id,
                 finding_type,
                 json.dumps(finding),
                 json.dumps(evidence),
@@ -107,7 +112,7 @@ def _store_finding(
 
 
 @router.get("/{kpi_id}")
-def get_drivers(kpi_id: str, refresh: bool = False, persona_id: str | None = None) -> dict:
+def get_drivers(kpi_id: str, refresh: bool = False, persona_id: str | None = None, current_user: dict = Depends(get_current_user)) -> dict:
     """Decompose the KPI's latest movement across all contract dimensions.
 
     Each dimension becomes a finding (type "driver_contribution") with its top
@@ -116,13 +121,14 @@ def get_drivers(kpi_id: str, refresh: bool = False, persona_id: str | None = Non
     confidence level; abstain-level findings are replaced by an honest
     insufficient-evidence message. persona_id filters by access rules.
     """
-    kpi = _get_kpi(kpi_id)
-    computation = _get_computation(kpi_id)
+    user_id = current_user["user_id"]
+    kpi = _get_kpi(kpi_id, user_id)
+    computation = _get_computation(kpi_id, user_id)
     dataset_id = kpi["dataset_id"]
 
     # Dimensions: the KPI's slices plus any contract-declared dimensions.
-    dataset = _load_dataset_row(dataset_id)
-    contracts = _load_contracts(dataset["source_ids"])
+    dataset = _load_dataset_row(dataset_id, user_id)
+    contracts = _load_contracts(dataset["source_ids"], user_id)
     dimensions = list(kpi.get("slice_columns") or [])
     for contract in contracts:
         for dim in contract.get("columns_by_role", {}).get("dimension", []):
@@ -130,7 +136,7 @@ def get_drivers(kpi_id: str, refresh: bool = False, persona_id: str | None = Non
                 dimensions.append(dim)
 
     canonical_df = _load_canonical_df(dataset_id)
-    freshness = _source_freshness(dataset_id)
+    freshness = _source_freshness(dataset_id, user_id)
 
     try:
         decomposition = decompose_contribution(
@@ -145,7 +151,8 @@ def get_drivers(kpi_id: str, refresh: bool = False, persona_id: str | None = Non
     conn = get_connection()
     try:
         anom_row = conn.execute(
-            "SELECT anomaly_json FROM anomalies WHERE kpi_id = ?", (kpi_id,)
+            "SELECT anomaly_json FROM anomalies WHERE kpi_id = ? AND user_id = ?",
+            (kpi_id, user_id),
         ).fetchone()
     finally:
         conn.close()
@@ -189,7 +196,7 @@ def get_drivers(kpi_id: str, refresh: bool = False, persona_id: str | None = Non
                 f"driver decomposition across dimension '{dim}'",
             ],
         )
-        findings.append(_store_finding(kpi_id, "driver_contribution", finding, evidence))
+        findings.append(_store_finding(kpi_id, "driver_contribution", finding, evidence, user_id))
 
     # Rank dimensions by their top slice's absolute contribution.
     findings.sort(
@@ -234,11 +241,12 @@ class DiDRequest(BaseModel):
 
 
 @router.post("/{kpi_id}/diff-in-diff")
-def run_diff_in_diff(kpi_id: str, req: DiDRequest, persona_id: str | None = None) -> dict:
+def run_diff_in_diff(kpi_id: str, req: DiDRequest, persona_id: str | None = None, current_user: dict = Depends(get_current_user)) -> dict:
     """Optional causal check when the user suspects a driver is confounded."""
-    kpi = _get_kpi(kpi_id)
+    user_id = current_user["user_id"]
+    kpi = _get_kpi(kpi_id, user_id)
     canonical_df = _load_canonical_df(kpi["dataset_id"])
-    freshness = _source_freshness(kpi["dataset_id"])
+    freshness = _source_freshness(kpi["dataset_id"], user_id)
 
     try:
         did = diff_in_diff(
@@ -270,13 +278,13 @@ def run_diff_in_diff(kpi_id: str, req: DiDRequest, persona_id: str | None = None
         statistic=did["did_estimate"],
         p_value_or_effect_size=did.get("p_value") or did.get("effect_size"),
         lineage=[
-            f"sources: {', '.join(_load_dataset_row(kpi['dataset_id'])['source_ids'])}",
+            f"sources: {', '.join(_load_dataset_row(kpi['dataset_id'], user_id)['source_ids'])}",
             f"canonical dataset {kpi['dataset_id']}",
             f"KPI {kpi_id} ({kpi.get('name')})",
             f"DiD on treatment '{req.treatment_dim}={did.get('treatment_value')}'",
         ],
     )
-    stored = _store_finding(kpi_id, "causal_diff_in_diff", finding, evidence)
+    stored = _store_finding(kpi_id, "causal_diff_in_diff", finding, evidence, user_id)
     scored = apply_confidence(
         [stored],
         dataset_id=kpi["dataset_id"],

@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from app.config import settings
 from app.db import get_connection
 from app.core.auth.security import get_current_user
+from app.core.errors import not_found
 
 router = APIRouter(prefix="/ingestion", tags=["ingestion"], dependencies=[Depends(get_current_user)])
 
@@ -26,7 +27,10 @@ def _extension(filename: str | None) -> str:
 
 @router.post("/upload")
 def upload_source(
-    file: UploadFile = File(...), grain: str = Form(...), cadence: str = Form(...)
+    file: UploadFile = File(...),
+    grain: str = Form(...),
+    cadence: str = Form(...),
+    current_user: dict = Depends(get_current_user),
 ) -> dict:
     """Save the raw file under data/uploads/{source_id}/ and record it in `sources`."""
     ext = _extension(file.filename)
@@ -44,9 +48,9 @@ def upload_source(
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO sources (source_id, filename, grain, cadence, uploaded_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (source_id, file.filename, grain, cadence, uploaded_at),
+            "INSERT INTO sources (source_id, user_id, filename, grain, cadence, uploaded_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (source_id, current_user["user_id"], file.filename, grain, cadence, uploaded_at),
         )
         conn.commit()
     finally:
@@ -61,8 +65,8 @@ def upload_source(
 
 
 @router.get("/sources")
-def list_sources() -> dict:
-    """List all uploaded sources, newest first, with derived-dataset counts.
+def list_sources(current_user: dict = Depends(get_current_user)) -> dict:
+    """List the current user's uploaded sources, newest first, with derived-dataset counts.
 
     derived_dataset_count: how many canonical datasets were built (at least
     partly) from this source — shown in the UI's delete confirmation.
@@ -71,10 +75,12 @@ def list_sources() -> dict:
     try:
         rows = conn.execute(
             "SELECT source_id, filename, grain, cadence, uploaded_at "
-            "FROM sources ORDER BY uploaded_at DESC"
+            "FROM sources WHERE user_id = ? ORDER BY uploaded_at DESC",
+            (current_user["user_id"],),
         ).fetchall()
         dataset_rows = conn.execute(
-            "SELECT source_ids FROM canonical_datasets"
+            "SELECT source_ids FROM canonical_datasets WHERE user_id = ?",
+            (current_user["user_id"],),
         ).fetchall()
     finally:
         conn.close()
@@ -137,24 +143,25 @@ def _delete_dataset_rows(dataset_id: str, conn) -> None:
 
 
 @router.delete("/sources/{source_id}")
-def delete_source(source_id: str) -> dict:
+def delete_source(source_id: str, current_user: dict = Depends(get_current_user)) -> dict:
     """Delete an uploaded source and everything derived from it.
 
-    Cascade: the raw uploaded file folder, this source's profile/contract/
-    quality report, and any canonical dataset built from this source (with
-    the dataset's own cascade: KPIs, computations, anomalies, findings,
-    insights, recommendation packages, LLM call ledger rows, and the
-    canonical CSV on disk). Idempotent: 200 even if some pieces are already
-    gone; 404 only when the source was never uploaded.
+    Ownership: only the source's owner may delete it; anyone else gets a
+    clean 404. Cascade: the raw uploaded file folder, this source's
+    profile/contract/quality report, and any canonical dataset built from
+    this source (with the dataset's own cascade: KPIs, computations,
+    anomalies, findings, insights, recommendation packages, LLM call ledger
+    rows, and the canonical CSV on disk). Idempotent: 200 even if some pieces
+    are already gone; 404 only when the source was never uploaded.
     """
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT source_id, filename FROM sources WHERE source_id = ?",
-            (source_id,),
+            "SELECT source_id, filename FROM sources WHERE source_id = ? AND user_id = ?",
+            (source_id, current_user["user_id"]),
         ).fetchone()
         if row is None:
-            raise HTTPException(status_code=404, detail=f"Source {source_id} not found.")
+            raise not_found(f"Source {source_id}")
 
         dataset_ids = _dataset_ids_for_source(source_id)
         for dataset_id in dataset_ids:

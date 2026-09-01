@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from app.core.semantic.contract_builder import build_contract
 from app.db import get_connection
 from app.core.auth.security import get_current_user
+from app.core.errors import not_found
 
 router = APIRouter(prefix="/semantic-contract", tags=["semantic-contract"], dependencies=[Depends(get_current_user)])
 
@@ -22,23 +23,24 @@ _REQUIRED_FIELDS = (
 )
 
 
-def _get_profile_row(source_id: str):
+def _get_profile_row(source_id: str, user_id: str):
     conn = get_connection()
     try:
         return conn.execute(
-            "SELECT profile_json FROM profiles WHERE source_id = ?",
-            (source_id,),
+            "SELECT profile_json FROM profiles WHERE source_id = ? AND user_id = ?",
+            (source_id, user_id),
         ).fetchone()
     finally:
         conn.close()
 
 
-def _get_source_row(source_id: str):
+def _get_source_row(source_id: str, user_id: str):
     conn = get_connection()
     try:
         return conn.execute(
-            "SELECT source_id, filename, grain, cadence FROM sources WHERE source_id = ?",
-            (source_id,),
+            "SELECT source_id, filename, grain, cadence FROM sources "
+            "WHERE source_id = ? AND user_id = ?",
+            (source_id, user_id),
         ).fetchone()
     finally:
         conn.close()
@@ -51,16 +53,18 @@ class ContractIn(BaseModel):
 
 
 @router.get("/{source_id}")
-def get_contract(source_id: str) -> dict:
+def get_contract(source_id: str, current_user: dict = Depends(get_current_user)) -> dict:
     """Return the stored contract, or build one from the stored profile if none exists."""
-    if _get_source_row(source_id) is None:
-        raise HTTPException(status_code=404, detail=f"Source {source_id} not found.")
+    user_id = current_user["user_id"]
+    if _get_source_row(source_id, user_id) is None:
+        raise not_found(f"Source {source_id}")
 
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT contract_json, updated_at FROM semantic_contracts WHERE source_id = ?",
-            (source_id,),
+            "SELECT contract_json, updated_at FROM semantic_contracts "
+            "WHERE source_id = ? AND user_id = ?",
+            (source_id, user_id),
         ).fetchone()
     finally:
         conn.close()
@@ -72,22 +76,22 @@ def get_contract(source_id: str) -> dict:
             "built": False,
         }
 
-    profile_row = _get_profile_row(source_id)
+    profile_row = _get_profile_row(source_id, user_id)
     if profile_row is None:
         raise HTTPException(
             status_code=409,
             detail=f"Source {source_id} has not been profiled yet — profile it first.",
         )
 
-    source = _get_source_row(source_id)
+    source = _get_source_row(source_id, user_id)
     contract = build_contract(json.loads(profile_row["profile_json"]), grain=source["grain"])
     updated_at = datetime.now(timezone.utc).isoformat()
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO semantic_contracts (source_id, contract_json, updated_at) "
-            "VALUES (?, ?, ?)",
-            (source_id, json.dumps(contract), updated_at),
+            "INSERT INTO semantic_contracts (source_id, user_id, contract_json, updated_at) "
+            "VALUES (?, ?, ?, ?)",
+            (source_id, user_id, json.dumps(contract), updated_at),
         )
         conn.commit()
     finally:
@@ -101,10 +105,11 @@ def get_contract(source_id: str) -> dict:
 
 
 @router.put("/{source_id}")
-def put_contract(source_id: str, payload: ContractIn) -> dict:
+def put_contract(source_id: str, payload: ContractIn, current_user: dict = Depends(get_current_user)) -> dict:
     """Overwrite the stored contract with the user's edited version."""
-    if _get_source_row(source_id) is None:
-        raise HTTPException(status_code=404, detail=f"Source {source_id} not found.")
+    user_id = current_user["user_id"]
+    if _get_source_row(source_id, user_id) is None:
+        raise not_found(f"Source {source_id}")
 
     contract = payload.contract
     missing = [f for f in _REQUIRED_FIELDS if f not in contract]
@@ -118,11 +123,11 @@ def put_contract(source_id: str, payload: ContractIn) -> dict:
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO semantic_contracts (source_id, contract_json, updated_at) "
-            "VALUES (?, ?, ?) "
+            "INSERT INTO semantic_contracts (source_id, user_id, contract_json, updated_at) "
+            "VALUES (?, ?, ?, ?) "
             "ON CONFLICT(source_id) DO UPDATE SET contract_json = excluded.contract_json, "
             "updated_at = excluded.updated_at",
-            (source_id, json.dumps(contract), updated_at),
+            (source_id, user_id, json.dumps(contract), updated_at),
         )
         conn.commit()
     finally:

@@ -18,6 +18,7 @@ class Source(Base):
     __tablename__ = "sources"
 
     source_id = Column(Text, primary_key=True)
+    user_id = Column(Text)
     filename = Column(Text)
     grain = Column(Text)
     cadence = Column(Text)
@@ -31,6 +32,7 @@ profiles_table = Table(
     "profiles",
     Base.metadata,
     Column("source_id", Text),
+    Column("user_id", Text),
     Column("profile_json", Text),
     Column("created_at", Text),
 )
@@ -39,6 +41,7 @@ anomalies_table = Table(
     "anomalies",
     Base.metadata,
     Column("kpi_id", Text),
+    Column("user_id", Text),
     Column("anomaly_json", Text),
     Column("detected_at", Text),
 )
@@ -47,6 +50,7 @@ stage_timings_table = Table(
     "stage_timings",
     Base.metadata,
     Column("stage", Text),
+    Column("user_id", Text),
     Column("latency_ms", Integer),
     Column("recorded_at", Text),
 )
@@ -56,6 +60,7 @@ class SemanticContract(Base):
     __tablename__ = "semantic_contracts"
 
     source_id = Column(Text, primary_key=True)
+    user_id = Column(Text)
     contract_json = Column(Text)
     updated_at = Column(Text)
 
@@ -64,6 +69,7 @@ class QualityReport(Base):
     __tablename__ = "quality_reports"
 
     source_id = Column(Text, primary_key=True)
+    user_id = Column(Text)
     report_json = Column(Text)
     created_at = Column(Text)
 
@@ -72,6 +78,8 @@ class CanonicalDataset(Base):
     __tablename__ = "canonical_datasets"
 
     dataset_id = Column(Text, primary_key=True)
+    user_id = Column(Text)
+    user_id = Column(Text)
     source_ids = Column(Text)
     join_config_json = Column(Text)
     created_at = Column(Text)
@@ -81,6 +89,8 @@ class Kpi(Base):
     __tablename__ = "kpis"
 
     kpi_id = Column(Text, primary_key=True)
+    user_id = Column(Text)
+    user_id = Column(Text)
     dataset_id = Column(Text)
     definition_json = Column(Text)
     status = Column(Text)
@@ -90,6 +100,7 @@ class KpiComputation(Base):
     __tablename__ = "kpi_computations"
 
     kpi_id = Column(Text, primary_key=True)
+    user_id = Column(Text)
     computation_json = Column(Text)
     computed_at = Column(Text)
 
@@ -98,6 +109,7 @@ class Finding(Base):
     __tablename__ = "findings"
 
     finding_id = Column(Text, primary_key=True)
+    user_id = Column(Text)
     kpi_id = Column(Text)
     finding_type = Column(Text)
     finding_json = Column(Text)
@@ -117,6 +129,7 @@ class Insight(Base):
     __tablename__ = "insights"
 
     insight_id = Column(Text, primary_key=True)
+    user_id = Column(Text)
     kpi_id = Column(Text)
     persona_id = Column(Text)
     text = Column(Text)
@@ -127,6 +140,7 @@ class RecommendationPackage(Base):
     __tablename__ = "recommendation_packages"
 
     package_id = Column(Text, primary_key=True)
+    user_id = Column(Text)
     kpi_id = Column(Text)
     package_json = Column(Text)
     created_at = Column(Text)
@@ -136,6 +150,7 @@ class LlmCall(Base):
     __tablename__ = "llm_calls"
 
     call_id = Column(Text, primary_key=True)
+    user_id = Column(Text)
     kpi_id = Column(Text)
     package_hash = Column(Text)
     prompt_tokens = Column(Integer)
@@ -153,6 +168,7 @@ class Feedback(Base):
     __tablename__ = "feedback"
 
     feedback_id = Column(Text, primary_key=True)
+    user_id = Column(Text)
     target_type = Column(Text)
     target_id = Column(Text)
     verdict = Column(Text)
