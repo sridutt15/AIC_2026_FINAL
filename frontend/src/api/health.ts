@@ -1,5 +1,5 @@
 /** Base URL for the backend API. All fetch wrappers live in src/api/. */
-export const API_BASE_URL = 'http://localhost:8000'
+export const API_BASE_URL = 'https://aic-2026.onrender.com'
 
 export interface HealthResponse {
   status: string
