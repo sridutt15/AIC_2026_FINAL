@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { listDatasets, listKpis } from '../api/kpi'
 import { getRecommendation, getLlmLedger } from '../api/recommendations'
-import { usePersonaId } from '../context/PersonaContext'
 import type {
   LlmLedgerResponse,
   RecommendationPackage,
@@ -13,7 +12,7 @@ const PACKAGE_FIELDS: { key: keyof RecommendationPackage; label: string }[] = [
   { key: 'controllable_lever', label: 'Controllable lever' },
   { key: 'candidate_action', label: 'Candidate action' },
   { key: 'expected_impact', label: 'Expected impact' },
-  { key: 'owner', label: 'Owner (persona)' },
+  { key: 'owner', label: 'Owner' },
   { key: 'confidence', label: 'Confidence' },
   { key: 'monitoring_plan', label: 'Monitoring plan' },
 ]
@@ -38,8 +37,7 @@ function fmtCost(usd: number | undefined | null): string {
 }
 
 export default function RecommendationsPage() {
-  const personaId = usePersonaId()
-  const [datasets, setDatasets] = useState<{ dataset_id: string }[]>([])
+  const [datasets, setDatasets] = useState<{ dataset_id: string; name?: string | null }[]>([])
   const [datasetId, setDatasetId] = useState('')
   const [kpis, setKpis] = useState<{ kpi_id: string; name: string; status: string }[]>([])
   const [kpiId, setKpiId] = useState('')
@@ -69,33 +67,33 @@ export default function RecommendationsPage() {
     setKpiId('')
     setKpis([])
     setRec(null)
-    listKpis(datasetId, personaId)
+    listKpis(datasetId)
       .then((list) => {
         const usable = list.filter((k) => k.status !== 'invalid')
         setKpis(usable)
         if (usable.length > 0) setKpiId(usable[0].kpi_id)
       })
       .catch((err) => setError(String(err)))
-  }, [datasetId, personaId])
+  }, [datasetId])
 
   useEffect(() => {
     if (!kpiId) return
     setLoading(true)
     setError(null)
-    getRecommendation(kpiId, personaId)
+    getRecommendation(kpiId)
       .then((r) => {
         setRec(r)
         refreshLedger()
       })
       .catch((err) => setError(String(err)))
       .finally(() => setLoading(false))
-  }, [kpiId, personaId])
+  }, [kpiId])
 
   const handleRegenerate = () => {
     if (!kpiId) return
     setLoading(true)
     setError(null)
-    getRecommendation(kpiId, personaId)
+    getRecommendation(kpiId)
       .then((r) => {
         setRec(r)
         refreshLedger()
@@ -124,7 +122,7 @@ export default function RecommendationsPage() {
             </option>
             {datasets.map((d) => (
               <option key={d.dataset_id} value={d.dataset_id}>
-                {d.dataset_id.slice(0, 8)}…
+                {d.name || d.dataset_id.slice(0, 8) + '…'}
               </option>
             ))}
           </select>
@@ -174,9 +172,11 @@ export default function RecommendationsPage() {
                 {rec.llm_call_metadata.latency_ms} ms · {fmtCost(rec.llm_call_metadata.cost_usd)}
               </span>
             </div>
-            <p className="mt-3 rounded-md bg-gray-50 p-4 text-sm leading-relaxed text-gray-800">
-              {rec.recommendation_text}
-            </p>
+            <ul className="mt-3 list-disc space-y-1 rounded-md bg-gray-50 p-4 pl-8 text-sm leading-relaxed text-gray-800">
+              {(rec.recommendation_bullets ?? []).map((b: string, i: number) => (
+                <li key={i}>{b}</li>
+              ))}
+            </ul>
           </div>
 
           <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">

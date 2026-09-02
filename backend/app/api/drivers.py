@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.api.integrations import apply_confidence, apply_persona
+from app.api.integrations import apply_confidence
 from app.core.drivers.causal import diff_in_diff
 from app.core.drivers.contribution import decompose_contribution
 from app.core.activity.logger import log_activity
@@ -113,14 +113,14 @@ def _store_finding(
 
 
 @router.get("/{kpi_id}")
-def get_drivers(kpi_id: str, refresh: bool = False, persona_id: str | None = None, current_user: dict = Depends(get_current_user)) -> dict:
+def get_drivers(kpi_id: str, refresh: bool = False, current_user: dict = Depends(get_current_user)) -> dict:
     """Decompose the KPI's latest movement across all contract dimensions.
 
     Each dimension becomes a finding (type "driver_contribution") with its top
     slices ranked by |contribution|, wrapped in evidence, and stored. Returns
     the ranked list, most material dimension first. Every finding carries a
     confidence level; abstain-level findings are replaced by an honest
-    insufficient-evidence message. persona_id filters by access rules.
+    insufficient-evidence message.
     """
     user_id = current_user["user_id"]
     kpi = _get_kpi(kpi_id, user_id)
@@ -226,23 +226,19 @@ def get_drivers(kpi_id: str, refresh: bool = False, persona_id: str | None = Non
         user_id, "driver_analysis", "kpi", kpi_id,
         f"Ran driver analysis for KPI {kpi.get('name', kpi_id)}",
     )
-    return apply_persona(
-        {
-            "kpi_id": kpi_id,
-            "definition": kpi,
-            "computation_summary": {
-                "value": computation.get("value"),
-                "baseline": computation.get("baseline"),
-                "benchmark": computation.get("benchmark"),
-            },
-            "total_movement": total_movement,
-            "before": decomposition["before"],
-            "after": decomposition["after"],
-            "findings": findings,
+    return {
+        "kpi_id": kpi_id,
+        "definition": kpi,
+        "computation_summary": {
+            "value": computation.get("value"),
+            "baseline": computation.get("baseline"),
+            "benchmark": computation.get("benchmark"),
         },
-        persona_id,
-        dataset_id,
-    )
+        "total_movement": total_movement,
+        "before": decomposition["before"],
+        "after": decomposition["after"],
+        "findings": findings,
+    }
 
 
 class DiDRequest(BaseModel):
@@ -253,7 +249,7 @@ class DiDRequest(BaseModel):
 
 
 @router.post("/{kpi_id}/diff-in-diff")
-def run_diff_in_diff(kpi_id: str, req: DiDRequest, persona_id: str | None = None, current_user: dict = Depends(get_current_user)) -> dict:
+def run_diff_in_diff(kpi_id: str, req: DiDRequest, current_user: dict = Depends(get_current_user)) -> dict:
     """Optional causal check when the user suspects a driver is confounded."""
     user_id = current_user["user_id"]
     kpi = _get_kpi(kpi_id, user_id)
@@ -302,4 +298,4 @@ def run_diff_in_diff(kpi_id: str, req: DiDRequest, persona_id: str | None = None
         dataset_id=kpi["dataset_id"],
         kpi_status=kpi.get("status"),
     )[0]
-    return apply_persona(scored, persona_id, kpi["dataset_id"])
+    return scored

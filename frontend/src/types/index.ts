@@ -109,6 +109,7 @@ export type Json = Record<string, unknown>
 
 export interface CanonicalDatasetInfo {
   dataset_id: string
+  name?: string | null
   created_at: string
   row_count: number
   column_count: number
@@ -160,6 +161,7 @@ export interface KpiComputeResponse {
 
 export interface DatasetListEntry {
   dataset_id: string
+  name?: string | null
   source_ids: string[]
   created_at: string
 }
@@ -308,10 +310,8 @@ export interface InsightResponse {
   insight_id: string
   kpi_id: string
   kpi_name: string
-  persona_id: string | null
-  persona_name: string | null
-  text: string
-  previous_text: string | null
+  bullets: string[]
+  previous_bullets: string[] | null
   deterministic: boolean
   confidence: ConfidenceResult | null
   generated_at: string
@@ -365,8 +365,7 @@ export interface LlmCallMetadata {
 
 export interface RecommendationResponse {
   kpi_id: string
-  persona_id: string | null
-  recommendation_text: string
+  recommendation_bullets: string[]
   package: RecommendationPackage
   llm_call_metadata: LlmCallMetadata
 }

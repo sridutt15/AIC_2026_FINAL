@@ -1,11 +1,11 @@
 """End-to-end demo-scenario tests (Phase 11) — the four brief scenarios.
 
-Scenario A: multi-factor movement, 2 personas -> different insight text.
+Scenario A: multi-factor movement -> bulleted insight with driver detail.
 Scenario B: deliberately weak evidence -> level 'abstain' end-to-end, no
             fabricated insight.
 Scenario C: sparse-history KPI -> flagged low-data by validation; no
             false-confidence trend.
-Scenario D: restricted persona's JSON responses never contain the
+
             restricted column/domain — verified directly on response JSON.
 """
 
@@ -46,7 +46,7 @@ def _build_canonical(client, source_ids):
     return build.json()["dataset_id"]
 
 
-# --- Scenario A: multi-factor movement, two personas ------------------------
+# --- Scenario A: multi-factor movement --------------------------------------
 
 A_CSV = "\n".join(
     [
@@ -72,8 +72,8 @@ A_CSV = "\n".join(
 )
 
 
-def test_scenario_a_multi_factor_two_personas(isolated_env):
-    """A multi-driver KPI yields persona-specific insight text end-to-end."""
+def test_scenario_a_multi_factor_bulleted_insight(isolated_env):
+    """A multi-driver KPI yields a bulleted insight with driver detail (Phase 18)."""
     init_db()
     with TestClient(app) as client:
         s1 = _upload(client, "scenario_a.csv", A_CSV)
@@ -88,12 +88,10 @@ def test_scenario_a_multi_factor_two_personas(isolated_env):
         )
         client.get(f"/kpi/{target['kpi_id']}/compute")
 
-        cm = client.get(
-            f"/insights/{target['kpi_id']}?persona_id=category_manager"
-        )
-        cfo = client.get(f"/insights/{target['kpi_id']}?persona_id=cfo")
-        assert cm.status_code == 200 and cfo.status_code == 200
-        cm_text, cfo_text = cm.json()["text"], cfo.json()["text"]
+        insight = client.get(f"/insights/{target['kpi_id']}")
+        assert insight.status_code == 200
+        bullets = insight.json()["bullets"]
+        assert isinstance(bullets, list) and bullets
 
         # Multi-driver decomposition produced real driver findings.
         drivers = client.get(f"/drivers/{target['kpi_id']}").json()
@@ -103,10 +101,10 @@ def test_scenario_a_multi_factor_two_personas(isolated_env):
         ]
         assert len(non_abstained) >= 1, "expected at least one confident driver"
 
-        # Persona texts differ; CM carries driver detail, CFO does not.
-        assert cm_text != cfo_text
-        assert "Top driver" in cm_text
-        assert "Top driver" not in cfo_text
+        # The bullets carry the top-driver detail and confidence.
+        joined = " ".join(bullets)
+        assert "Top driver" in joined
+        assert "Confidence" in joined
 
 
 # --- Scenario B: abstention --------------------------------------------------
@@ -193,66 +191,3 @@ def test_scenario_c_sparse_history_low_data(isolated_env):
         # reported and small; CI exists but reflects the tiny sample.
         comp = client.get(f"/kpi/{target['kpi_id']}/compute").json()
         assert comp["computation"]["period_count"] <= 3
-
-
-# --- Scenario D: role-based security ------------------------------------------
-
-D_CSV = "\n".join(
-    [
-        "date,region,order_id,revenue,delivery_fee",
-        "2024-05-01,A,O1,100.0,4.50",
-        "2024-05-01,B,O2,50.0,3.00",
-        "2024-05-02,A,O3,101.0,4.60",
-        "2024-05-02,B,O4,49.0,2.90",
-        "2024-05-03,A,O5,99.0,4.40",
-        "2024-05-03,B,O6,52.0,3.10",
-        "2024-05-04,A,O7,100.0,4.50",
-        "2024-05-04,B,O8,51.0,3.00",
-        "2024-05-05,A,O9,98.0,4.40",
-        "2024-05-05,B,O10,53.0,3.20",
-        "2024-05-06,A,O11,100.0,4.50",
-        "2024-05-06,B,O12,50.0,3.00",
-        "2024-05-07,A,O13,102.0,4.60",
-        "2024-05-07,B,O14,51.0,3.10",
-        "2024-05-08,A,O15,103.0,4.70",
-        "2024-05-08,B,O16,49.0,2.90",
-    ]
-)
-
-RESTRICTED_TOKENS = ["delivery_fee", "O1", "O2", "order_id"]
-
-
-def test_scenario_d_restricted_persona_never_sees_restricted_data(isolated_env):
-    """CFO persona responses never contain restricted columns/values —
-    verified directly on the raw JSON of every findings-bearing endpoint."""
-    init_db()
-    with TestClient(app) as client:
-        s1 = _upload(client, "scenario_d.csv", D_CSV)
-        s2 = _upload(client, "scenario_d_bonus.csv", "date,bonus\n" + "\n".join(
-            f"2024-05-0{i},1.0" for i in range(1, 9)) + "\n")
-        dataset_id = _build_canonical(client, [s1, s2])
-        disc = client.post(f"/kpi/discover/{dataset_id}").json()
-        target = next(
-            k for k in disc["kpis"]
-            if k["measure"] == "revenue" and k["status"] == "valid"
-        )
-        client.get(f"/kpi/{target['kpi_id']}/compute")
-
-        for path in (
-            f"/kpi/dataset/{dataset_id}?persona_id=cfo",
-            f"/drivers/{target['kpi_id']}?persona_id=cfo",
-            f"/anomaly/{target['kpi_id']}?persona_id=cfo",
-            f"/insights/{target['kpi_id']}?persona_id=cfo",
-        ):
-            resp = client.get(path)
-            assert resp.status_code == 200, f"{path} failed: {resp.text[:200]}"
-            raw = json.dumps(resp.json())
-            for token in RESTRICTED_TOKENS:
-                assert token not in raw, (
-                    f"RESTRICTED token '{token}' leaked via {path}"
-                )
-
-        # Sanity: the unrestricted persona DOES see the identifier dimension
-        # in driver findings (the filter is what removes it for the CFO).
-        unrestricted = client.get(f"/drivers/{target['kpi_id']}").json()
-        assert "region" in json.dumps(unrestricted)

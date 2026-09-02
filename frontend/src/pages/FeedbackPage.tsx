@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { listRecentFeedback, submitFeedback } from '../api/feedback'
 import { listDatasets, listKpis } from '../api/kpi'
 import { getInsight } from '../api/insights'
-import { usePersonaId } from '../context/PersonaContext'
 import type { FeedbackRow } from '../types'
 
 type Verdict = 'confirm' | 'correct' | 'reject'
@@ -14,9 +13,8 @@ const VERDICT_STYLES: Record<Verdict, string> = {
 }
 
 export default function FeedbackPage() {
-  const personaId = usePersonaId()
   const [rows, setRows] = useState<FeedbackRow[]>([])
-  const [datasets, setDatasets] = useState<{ dataset_id: string }[]>([])
+  const [datasets, setDatasets] = useState<{ dataset_id: string; name?: string | null }[]>([])
   const [datasetId, setDatasetId] = useState('')
   const [kpis, setKpis] = useState<{ kpi_id: string; name: string; status: string }[]>([])
   const [kpiId, setKpiId] = useState('')
@@ -47,22 +45,22 @@ export default function FeedbackPage() {
     setKpiId('')
     setKpis([])
     setCurrentInsight(null)
-    listKpis(datasetId, personaId)
+    listKpis(datasetId)
       .then((list) => {
         const usable = list.filter((k) => k.status !== 'invalid')
         setKpis(usable)
         if (usable.length > 0) setKpiId(usable[0].kpi_id)
       })
       .catch((err) => setError(String(err)))
-  }, [datasetId, personaId])
+  }, [datasetId])
 
   useEffect(() => {
     if (!kpiId) return
     setError(null)
-    getInsight(kpiId, false, personaId)
-      .then((i) => setCurrentInsight({ insight_id: i.insight_id, text: i.text }))
+    getInsight(kpiId, false)
+      .then((i) => setCurrentInsight({ insight_id: i.insight_id, text: i.bullets?.join(' ') ?? '' }))
       .catch(() => setCurrentInsight(null))
-  }, [kpiId, personaId])
+  }, [kpiId])
 
   const handleVerdict = async (verdict: Verdict) => {
     if (!currentInsight) return
@@ -112,7 +110,7 @@ export default function FeedbackPage() {
             </option>
             {datasets.map((d) => (
               <option key={d.dataset_id} value={d.dataset_id}>
-                {d.dataset_id.slice(0, 8)}…
+                {d.name || d.dataset_id.slice(0, 8) + '…'}
               </option>
             ))}
           </select>

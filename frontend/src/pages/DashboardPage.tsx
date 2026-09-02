@@ -5,7 +5,6 @@ import { getAnomalies } from '../api/anomaly'
 import { getInsight } from '../api/insights'
 import { getRecommendation } from '../api/recommendations'
 import { qualityReportForDataset } from '../api/dataQuality'
-import { usePersonaId } from '../context/PersonaContext'
 import ConfidenceBadge from '../components/ConfidenceBadge'
 import type {
   AnomalyResponse,
@@ -44,8 +43,7 @@ function Section({
 }
 
 export default function DashboardPage() {
-  const personaId = usePersonaId()
-  const [datasets, setDatasets] = useState<{ dataset_id: string; source_ids: string[] }[]>([])
+  const [datasets, setDatasets] = useState<{ dataset_id: string; name?: string | null; source_ids: string[] }[]>([])
   const [datasetId, setDatasetId] = useState('')
   const [kpis, setKpis] = useState<{ kpi_id: string; name: string; status: string; materiality?: number }[]>([])
   const [kpiId, setKpiId] = useState('')
@@ -75,7 +73,7 @@ export default function DashboardPage() {
     setInsight(null)
     setRec(null)
     setQuality(null)
-    listKpis(datasetId, personaId)
+    listKpis(datasetId)
       .then((list) => {
         const usable = list.filter((k) => k.status !== 'invalid')
         setKpis(usable)
@@ -85,17 +83,17 @@ export default function DashboardPage() {
     qualityReportForDataset(datasetId)
       .then((q) => setQuality(q))
       .catch(() => setQuality(null))
-  }, [datasetId, personaId])
+  }, [datasetId])
 
   useEffect(() => {
     if (!kpiId) return
     setLoading(true)
     setError(null)
     Promise.allSettled([
-      getDrivers(kpiId, false, personaId),
-      getAnomalies(kpiId, false, personaId),
-      getInsight(kpiId, false, personaId),
-      getRecommendation(kpiId, personaId),
+      getDrivers(kpiId, false),
+      getAnomalies(kpiId, false),
+      getInsight(kpiId, false),
+      getRecommendation(kpiId),
     ])
       .then(([d, a, i, r]) => {
         setDrivers(d.status === 'fulfilled' ? d.value : null)
@@ -105,7 +103,7 @@ export default function DashboardPage() {
         if (d.status === 'rejected') setError(String(d.reason))
       })
       .finally(() => setLoading(false))
-  }, [kpiId, personaId])
+  }, [kpiId])
 
   const topFinding = drivers?.findings.find(
     (f) => !(f.finding as unknown as { abstained?: boolean }).abstained,
@@ -123,7 +121,7 @@ export default function DashboardPage() {
         <h2 className="text-base font-semibold text-gray-800">Decision Workspace</h2>
         <p className="mt-1 text-sm text-gray-500">
           The full story on one page: dataset health → top KPIs → anomalies →
-          drivers → insight → recommendation, all for the selected persona.
+          drivers → insight → recommendation for the selected KPI.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <select
@@ -136,7 +134,7 @@ export default function DashboardPage() {
             </option>
             {datasets.map((d) => (
               <option key={d.dataset_id} value={d.dataset_id}>
-                {d.dataset_id.slice(0, 8)}…
+                {d.name || d.dataset_id.slice(0, 8) + '…'}
               </option>
             ))}
           </select>
@@ -251,10 +249,10 @@ export default function DashboardPage() {
         <Section step={5} title="Insight">
           {insight ? (
             <p className="rounded-md bg-gray-50 p-3 text-sm leading-relaxed text-gray-800">
-              {insight.text}
+              {(insight.bullets ?? []).join(' ')}
             </p>
           ) : (
-            <p className="text-sm text-gray-400">No insight available for this KPI/persona.</p>
+            <p className="text-sm text-gray-400">No insight available for this KPI.</p>
           )}
         </Section>
 
@@ -262,7 +260,7 @@ export default function DashboardPage() {
           {rec ? (
             <div className="space-y-2">
               <p className="rounded-md bg-indigo-50 p-3 text-sm leading-relaxed text-gray-800">
-                {rec.recommendation_text}
+                {(rec.recommendation_bullets ?? []).join(' ')}
               </p>
               <p className="text-xs text-gray-500">
                 LLM call: {rec.llm_call_metadata.prompt_tokens} in /{' '}

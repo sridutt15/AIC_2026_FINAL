@@ -20,7 +20,6 @@ from app.api import (
     anomaly,
     drivers,
     evidence,
-    persona,
     insights,
     recommendations,
     telemetry,
@@ -123,7 +122,6 @@ app.include_router(kpi.router)
 app.include_router(anomaly.router)
 app.include_router(drivers.router)
 app.include_router(evidence.router)
-app.include_router(persona.router)
 app.include_router(insights.router)
 app.include_router(recommendations.router)
 app.include_router(telemetry.router)

@@ -31,7 +31,6 @@ PROTECTED_PREFIXES = (
     "/anomaly",
     "/drivers",
     "/evidence",
-    "/personas",
     "/insights",
     "/recommendations",
     "/feedback",

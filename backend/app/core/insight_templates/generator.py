@@ -1,8 +1,8 @@
-"""Deterministic insight generator: findings in, persona-specific text out.
+"""Deterministic insight generator: findings in, bulleted text out (Phase 18).
 
 NO LLM — plain Python f-strings over a documented template table. The
 generator is provably deterministic: identical inputs produce a
-byte-for-byte identical string (see tests/test_insight_generator.py).
+byte-for-byte identical list (see tests/test_insight_generator.py).
 
 Inputs (all optional except kpi_name/direction/magnitude):
     kpi_name        : display name of the KPI (e.g. "Gross Revenue")
@@ -14,21 +14,9 @@ Inputs (all optional except kpi_name/direction/magnitude):
     confidence      : {"level": "high"|"medium"|"low", reasons: [...]}
     before/after    : {"period": str, "value": float} period endpoints
 
-Persona tone (persona_id):
-    category_manager — full driver-level detail: which dimension/slice moved,
-        by how much, and the share of the total movement it explains.
-    cfo             — headline + financial impact only: direction, size,
-        confidence; no slice-level operational detail.
-    default/None    — balanced: headline + one-line driver summary.
-
 Every template uses fixed separators and rounding so output never depends on
 dict ordering, locale, or wall-clock time.
 """
-
-PERSONA_TONES = {
-    "category_manager": "tactical detail",
-    "cfo": "headline financial",
-}
 
 _LEVEL_PHRASES = {
     "high": "high-confidence",
@@ -99,6 +87,34 @@ def _confidence_phrase(confidence: dict | None) -> str:
     return f"Confidence: {phrase}."
 
 
+def generate_insight_bullets(
+    kpi_name: str,
+    direction: str,
+    magnitude,
+    magnitude_pct=None,
+    top_driver: dict | None = None,
+    confidence: dict | None = None,
+    before: dict | None = None,
+    after: dict | None = None,
+) -> list:
+    """Render the insight as a list of short bullet strings (Phase 18).
+
+    Pure function — deterministic: identical inputs produce a byte-for-byte
+    identical list. Bullets: headline movement, top driver, confidence.
+    """
+    headline = _headline(kpi_name, direction, magnitude, magnitude_pct)
+    driver = _driver_sentence(top_driver)
+    conf = _confidence_phrase(confidence)
+
+    bullets = [f"{headline}."]
+    if driver:
+        # Trim the trailing period so each bullet reads as one clean point.
+        bullets.append(driver.rstrip("."))
+        bullets[-1] += "."
+    bullets.append(conf)
+    return bullets
+
+
 def generate_insight(
     kpi_name: str,
     direction: str,
@@ -110,34 +126,16 @@ def generate_insight(
     before: dict | None = None,
     after: dict | None = None,
 ) -> str:
-    """Render the persona-specific insight text. Pure function — deterministic.
+    """Legacy single-paragraph renderer (kept for pre-Phase-18 callers/tests).
 
-    Calling this twice with identical arguments returns an identical string.
+    Calls the bullet generator and joins the bullets into one paragraph.
     """
-    headline = _headline(kpi_name, direction, magnitude, magnitude_pct)
-    driver = _driver_sentence(top_driver)
-    conf = _confidence_phrase(confidence)
-
-    pid = (persona_id or "").lower()
-
-    if pid == "cfo":
-        # CFO: headline + financial impact + confidence only. No slice detail.
-        return f"{headline}. {conf}"
-
-    if pid == "category_manager":
-        # Category Manager: full driver-level detail.
-        parts = [f"{headline}."]
-        if driver:
-            parts.append(driver)
-        parts.append(conf)
-        return " ".join(parts)
-
-    # Default persona: headline + driver summary + confidence.
-    parts = [f"{headline}."]
-    if driver:
-        parts.append(driver)
-    parts.append(conf)
-    return " ".join(parts)
+    bullets = generate_insight_bullets(
+        kpi_name, direction, magnitude,
+        magnitude_pct=magnitude_pct, top_driver=top_driver,
+        confidence=confidence, before=before, after=after,
+    )
+    return " ".join(bullets)
 
 
 def build_regenerate_proof(
@@ -147,11 +145,11 @@ def build_regenerate_proof(
     persona_id: str | None = None,
     **kwargs,
 ) -> dict:
-    """Call generate_insight twice and return both outputs for a UI diff check.
+    """Call generate_insight_bullets twice and return both outputs for a UI diff check.
 
-    Returns {first: str, second: str, identical: bool} — the visible proof of
-    determinism for the Insights page's Regenerate button.
+    Returns {first, second, identical} — the visible proof of determinism for
+    the Insights page's Regenerate button.
     """
-    first = generate_insight(kpi_name, direction, magnitude, persona_id, **kwargs)
-    second = generate_insight(kpi_name, direction, magnitude, persona_id, **kwargs)
+    first = generate_insight_bullets(kpi_name, direction, magnitude, **kwargs)
+    second = generate_insight_bullets(kpi_name, direction, magnitude, **kwargs)
     return {"first": first, "second": second, "identical": first == second}

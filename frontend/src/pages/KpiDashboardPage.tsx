@@ -12,7 +12,6 @@ import {
   YAxis,
 } from 'recharts'
 import { computeKpi, discoverKpis, listDatasets, listKpis } from '../api/kpi'
-import { usePersonaId } from '../context/PersonaContext'
 import type {
   DatasetListEntry,
   KpiComputation,
@@ -107,7 +106,6 @@ function KpiChart({ computation }: { computation: KpiComputation }) {
 }
 
 export default function KpiDashboardPage() {
-  const personaId = usePersonaId()
   const [datasets, setDatasets] = useState<DatasetListEntry[]>([])
   const [selected, setSelected] = useState<string>('')
   const [kpis, setKpis] = useState<KpiInfo[]>([])
@@ -131,10 +129,10 @@ export default function KpiDashboardPage() {
   useEffect(() => {
     if (!selected) return
     setDetail(null)
-    listKpis(selected, personaId)
+    listKpis(selected)
       .then(setKpis)
       .catch(() => setKpis([]))
-  }, [selected, personaId])
+  }, [selected])
 
   const handleDiscover = async () => {
     if (!selected) return
@@ -175,7 +173,7 @@ export default function KpiDashboardPage() {
         <p className="mt-1 text-sm text-gray-500">
           Discover KPIs from a canonical dataset's semantic contract, validate them, and
           compute value / trend / baseline / benchmark / confidence interval.
-          {personaId && ' Filtered for the selected persona.'}
+          
         </p>
         <div className="mt-3 flex items-center gap-3">
           <select
@@ -188,7 +186,7 @@ export default function KpiDashboardPage() {
             </option>
             {datasets.map((d) => (
               <option key={d.dataset_id} value={d.dataset_id}>
-                {d.dataset_id.slice(0, 8)}… ({new Date(d.created_at).toLocaleDateString()})
+                {d.name || d.dataset_id.slice(0, 8) + '…'} ({new Date(d.created_at).toLocaleDateString()})
               </option>
             ))}
           </select>

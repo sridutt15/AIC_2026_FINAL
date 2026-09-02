@@ -1,16 +1,13 @@
 import { authFetch } from './authClient'
 import { API_BASE_URL } from './health'
-import { withPersona } from './persona'
 import type { InsightResponse } from '../types'
 
-/** GET /insights/{kpi_id} — deterministic persona-specific insight text. */
+/** GET /insights/{kpi_id} — deterministic bulleted insight. */
 export async function getInsight(
   kpiId: string,
   refresh = false,
-  personaId: string | null = null,
 ): Promise<InsightResponse> {
   let query = refresh ? '?refresh=true' : ''
-  query = withPersona(query, personaId)
   const url = `${API_BASE_URL}/insights/${kpiId}${query}`
   const response = await authFetch(url)
   if (!response.ok) {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { listSources } from '../api/ingestion'
-import { buildCanonical, deleteCanonical, previewCanonical } from '../api/canonicalModel'
+import { buildCanonical, deleteCanonical, previewCanonical, renameCanonical } from '../api/canonicalModel'
 import { listDatasets } from '../api/kpi'
 import type { CanonicalDatasetInfo, DatasetListEntry, ProfileResult, SourceInfo } from '../types'
 import { getProfile } from '../api/profiling'
@@ -40,9 +40,26 @@ export default function CanonicalModelPage() {
     refreshDatasets()
   }, [])
 
+  const handleRenameDataset = async (d: DatasetListEntry) => {
+    const next = window.prompt('New dataset name:', d.name || '')
+    if (next === null) return
+    const trimmed = next.trim()
+    if (!trimmed || trimmed === d.name) return
+    try {
+      const result = await renameCanonical(d.dataset_id, trimmed)
+      setDatasets((prev) =>
+        prev.map((x) => (x.dataset_id === d.dataset_id ? { ...x, name: result.name } : x)),
+      )
+      if (built?.dataset_id === d.dataset_id) setBuilt({ ...built, name: result.name })
+      setNotice(`Renamed dataset to “${result.name}”.`)
+    } catch (err) {
+      setError(String(err))
+    }
+  }
+
   const handleDeleteDataset = async (d: DatasetListEntry) => {
     const confirmed = window.confirm(
-      `Delete canonical dataset ${d.dataset_id.slice(0, 8)}…?\n\n` +
+      `Delete canonical dataset “${d.name || d.dataset_id.slice(0, 8) + '…'}”?\n\n` +
         `This deletes its KPIs, computations, anomalies, findings, insights, ` +
         `recommendation packages, and LLM ledger rows. The raw uploaded ` +
         `sources are kept. This cannot be undone.`,
@@ -53,7 +70,7 @@ export default function CanonicalModelPage() {
     setNotice(null)
     try {
       await deleteCanonical(d.dataset_id)
-      setNotice(`Deleted dataset ${d.dataset_id.slice(0, 8)}… and all derived KPI data.`)
+      setNotice(`Deleted dataset “${d.name || d.dataset_id.slice(0, 8) + '…'}” and all derived KPI data.`)
       if (built?.dataset_id === d.dataset_id) setBuilt(null)
       refreshDatasets()
     } catch (err) {
@@ -269,14 +286,21 @@ export default function CanonicalModelPage() {
             <tbody>
               {datasets.map((d) => (
                 <tr key={d.dataset_id} className="border-b border-gray-100">
-                  <td className="py-2 pr-4 font-mono text-xs text-gray-800">
-                    {d.dataset_id.slice(0, 8)}…
+                  <td className="py-2 pr-4 text-sm font-medium text-gray-800">
+                    {d.name || d.dataset_id.slice(0, 8) + '…'}
                   </td>
                   <td className="py-2 pr-4 text-gray-600">{d.source_ids.length} source(s)</td>
                   <td className="py-2 pr-4 text-gray-500">
                     {d.created_at.replace('T', ' ').slice(0, 19)}
                   </td>
                   <td className="py-2 text-right">
+                    <button
+                      onClick={() => handleRenameDataset(d)}
+                      className="mr-2 rounded-md bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                      title="Rename this dataset"
+                    >
+                      Rename
+                    </button>
                     <button
                       onClick={() => handleDeleteDataset(d)}
                       disabled={deletingDataset === d.dataset_id}
@@ -298,7 +322,7 @@ export default function CanonicalModelPage() {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-semibold text-gray-800">
-                Canonical dataset {built.dataset_id.slice(0, 8)}…
+                {built.name || `Canonical dataset ${built.dataset_id.slice(0, 8)}…`}
               </h3>
               <p className="text-xs text-gray-500">
                 {built.row_count} rows × {built.column_count} columns

@@ -1,13 +1,13 @@
-"""Insights API — deterministic persona-specific insight text for a KPI (Phase 9).
+"""Insights API — deterministic bulleted insight text for a KPI (Phases 9/18).
 
-GET /insights/{kpi_id}?persona_id=&refresh=
+GET /insights/{kpi_id}?refresh=
     Runs the driver decomposition (same pipeline as /drivers), picks the top
-    non-abstained finding, renders persona-specific insight text via the
+    non-abstained finding, renders a short bulleted insight via the
     deterministic template generator, and caches it in the insights table.
 
-    refresh=true regenerates (and re-stores) the insight — the output text
-    is IDENTICAL because the generator is a pure deterministic function; the
-    endpoint also returns the previous and current text so the UI can
+    refresh=true regenerates (and re-stores) the insight — the output bullets
+    are IDENTICAL because the generator is a pure deterministic function; the
+    endpoint also returns the previous and current bullets so the UI can
     visually prove byte-for-byte equality.
 """
 
@@ -19,11 +19,9 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.drivers import get_drivers
 from app.core.activity.logger import log_activity
-from app.core.insight_templates.generator import generate_insight
-from app.core.persona.access_control import filter_for_persona
+from app.core.insight_templates.generator import generate_insight_bullets
 from app.core.telemetry.logger import timed_stage
 from app.db import get_connection
-from app.api.integrations import get_persona, contracts_for_dataset
 from app.core.auth.security import get_current_user
 
 router = APIRouter(prefix="/insights", tags=["insights"], dependencies=[Depends(get_current_user)])
@@ -32,25 +30,28 @@ router = APIRouter(prefix="/insights", tags=["insights"], dependencies=[Depends(
 get_drivers = timed_stage("insight generation")(get_drivers)
 
 
-def _persona_name(persona_id: str | None) -> str | None:
-    persona = get_persona(persona_id)
-    return persona["name"] if persona else None
-
-
-def _previous_insight(kpi_id: str, persona_id: str | None, user_id: str = "") -> str | None:
+def _previous_insight(kpi_id: str, user_id: str = "") -> list | None:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT text FROM insights WHERE kpi_id = ? AND persona_id IS ? AND user_id = ? "
+            "SELECT text FROM insights WHERE kpi_id = ? AND user_id = ? "
             "ORDER BY generated_at DESC LIMIT 1",
-            (kpi_id, persona_id, user_id),
+            (kpi_id, user_id),
         ).fetchone()
     finally:
         conn.close()
-    return row["text"] if row else None
+    if row is None:
+        return None
+    try:
+        parsed = json.loads(row["text"])
+        if isinstance(parsed, list):
+            return parsed
+    except (ValueError, TypeError):
+        pass
+    return [row["text"]]  # legacy pre-Phase-18 paragraph
 
 
-def _store_insight(insight_id: str, kpi_id: str, persona_id: str | None, text: str, user_id: str = "") -> str:
+def _store_insight(insight_id: str, kpi_id: str, bullets: list, user_id: str = "") -> str:
     generated_at = datetime.now(timezone.utc).isoformat()
     conn = get_connection()
     try:
@@ -58,7 +59,7 @@ def _store_insight(insight_id: str, kpi_id: str, persona_id: str | None, text: s
             "INSERT OR REPLACE INTO insights "
             "(insight_id, kpi_id, user_id, persona_id, text, generated_at) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            (insight_id, kpi_id, user_id, persona_id, text, generated_at),
+            (insight_id, kpi_id, user_id, None, json.dumps(bullets), generated_at),
         )
         conn.commit()
     finally:
@@ -67,13 +68,13 @@ def _store_insight(insight_id: str, kpi_id: str, persona_id: str | None, text: s
 
 
 @router.get("/{kpi_id}")
-def get_insight(kpi_id: str, persona_id: str | None = None, refresh: bool = False, current_user: dict = Depends(get_current_user)) -> dict:
-    """Generate (or return cached) deterministic insight text for a KPI."""
+def get_insight(kpi_id: str, refresh: bool = False, current_user: dict = Depends(get_current_user)) -> dict:
+    """Generate (or return cached) deterministic bulleted insight for a KPI."""
     user_id = current_user["user_id"]
     # The drivers endpoint does the full pipeline: decomposition, evidence,
-    # confidence, persona filtering. Reuse it so insights never diverge from
-    # the findings they describe.
-    drivers_response = get_drivers(kpi_id, refresh=refresh, persona_id=persona_id, current_user=current_user)
+    # confidence. Reuse it so insights never diverge from the findings they
+    # describe.
+    drivers_response = get_drivers(kpi_id, refresh=refresh, current_user=current_user)
     definition = drivers_response.get("definition") or {}
     kpi_name = definition.get("name") or kpi_id
 
@@ -112,25 +113,18 @@ def get_insight(kpi_id: str, persona_id: str | None = None, refresh: bool = Fals
         else ("down" if (total_movement or 0) < 0 else "flat")
     )
 
-    # Persona-filter the slice payload again for the top driver detail
-    # (Category Manager sees full detail; CFO sees none).
-    persona = get_persona(persona_id)
-    top_driver = None
-    show_detail = not persona or (persona_id == "category_manager")
-    if show_detail:
-        top_driver = {
-            "dimension": inner.get("dimension"),
-            "slice": top_slice.get("slice"),
-            "contribution": top_slice.get("contribution"),
-            "share_pct": top_slice.get("share_pct"),
-            "direction": top_slice.get("direction"),
-        }
+    top_driver = {
+        "dimension": inner.get("dimension"),
+        "slice": top_slice.get("slice"),
+        "contribution": top_slice.get("contribution"),
+        "share_pct": top_slice.get("share_pct"),
+        "direction": top_slice.get("direction"),
+    }
 
-    text = generate_insight(
+    bullets = generate_insight_bullets(
         kpi_name=kpi_name,
         direction=direction,
         magnitude=total_movement,
-        persona_id=persona_id,
         magnitude_pct=magnitude_pct,
         top_driver=top_driver,
         confidence=top.get("confidence"),
@@ -138,13 +132,11 @@ def get_insight(kpi_id: str, persona_id: str | None = None, refresh: bool = Fals
         after=after,
     )
 
-    # Read the previously stored text BEFORE overwriting, so the UI's
+    # Read the previously stored bullets BEFORE overwriting, so the UI's
     # regenerate diff-check has both outputs.
-    previous = _previous_insight(kpi_id, persona_id, user_id)
-    insight_id = str(
-        uuid.uuid5(uuid.NAMESPACE_URL, f"insight:{kpi_id}:{persona_id or 'default'}")
-    )
-    generated_at = _store_insight(insight_id, kpi_id, persona_id, text, user_id)
+    previous = _previous_insight(kpi_id, user_id)
+    insight_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"insight:{kpi_id}"))
+    generated_at = _store_insight(insight_id, kpi_id, bullets, user_id)
 
     log_activity(
         user_id, "insight_generated", "kpi", kpi_id,
@@ -154,10 +146,8 @@ def get_insight(kpi_id: str, persona_id: str | None = None, refresh: bool = Fals
         "insight_id": insight_id,
         "kpi_id": kpi_id,
         "kpi_name": kpi_name,
-        "persona_id": persona_id,
-        "persona_name": _persona_name(persona_id),
-        "text": text,
-        "previous_text": previous,
+        "bullets": bullets,
+        "previous_bullets": previous,
         "deterministic": True,
         "confidence": top.get("confidence"),
         "generated_at": generated_at,

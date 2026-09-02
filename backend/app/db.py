@@ -13,7 +13,6 @@ for schema routing because session-level SET is unreliable through the
 Supabase transaction pooler (port 6543).
 """
 
-import json
 import re
 import threading
 
@@ -46,47 +45,6 @@ _TABLE_PKS: dict[str, tuple[str, ...]] = {
     table.name: tuple(column.name for column in table.primary_key.columns)
     for table in Base.metadata.sorted_tables
 }
-
-# Seeded personas (Phase 8): role-based access rules applied by
-# core/persona/access_control.filter_for_persona before any response leaves
-# the API layer. Rules are generic — column ROLE tags, never specific names.
-#   allowed_domains  : dimension domains the persona may see (None = all)
-#   restricted_roles : contract column roles hidden from this persona
-#   restricted_columns: exact column names hidden from this persona
-#   max_slices       : per-dimension slice-detail cap (None = unlimited)
-_SEED_PERSONAS = [
-    {
-        "persona_id": "category_manager",
-        "name": "Category Manager",
-        "access_json": {
-            "description": "Tactical, broad access: every domain, full slice detail.",
-            "allowed_domains": None,
-            "restricted_roles": [],
-            "restricted_columns": [],
-            "max_slices": None,
-        },
-    },
-    {
-        "persona_id": "cfo",
-        "name": "CFO",
-        "access_json": {
-            "description": (
-                "Headline financial view: cost-breakdown and operational-detail "
-                "measures hidden, identifier roles restricted, slice detail capped."
-            ),
-            "allowed_domains": None,
-            "restricted_roles": ["identifier"],
-            "restricted_columns": [
-                "delivery_fee",
-                "platform_fee",
-                "estimated_delivery_minutes",
-                "actual_delivery_minutes",
-            ],
-            "max_slices": 5,
-        },
-    },
-]
-
 
 def use_schema(schema: str) -> None:
     """Point every subsequent statement at `schema` (test isolation)."""
@@ -244,20 +202,6 @@ def init_db() -> None:
             conn.exec_driver_sql(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
             conn.exec_driver_sql(f'SET LOCAL search_path TO "{schema}"')
             Base.metadata.create_all(bind=conn)
-            count = conn.execute(text("SELECT COUNT(*) AS n FROM personas")).scalar()
-            if not count:
-                for persona in _SEED_PERSONAS:
-                    conn.execute(
-                        text(
-                            "INSERT INTO personas (persona_id, name, access_json) "
-                            "VALUES (:persona_id, :name, :access_json)"
-                        ),
-                        {
-                            "persona_id": persona["persona_id"],
-                            "name": persona["name"],
-                            "access_json": json.dumps(persona["access_json"]),
-                        },
-                    )
             conn.commit()
         finally:
             conn.close()

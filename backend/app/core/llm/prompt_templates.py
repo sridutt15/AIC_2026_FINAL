@@ -1,28 +1,13 @@
-"""Prompt builder for the LLM recommendation layer.
+"""Prompt builder for the LLM recommendation layer (Phase 18: bulleted output).
 
 The prompt is built STRICTLY from the Phase 9 structured package fields
 (driver, controllable_lever, candidate_action, expected_impact, owner,
-confidence, monitoring_plan) plus the persona's tone preference. It never
-includes raw dataframes, unaggregated rows, or column-level data — the
-package is already an aggregated, persona-safe summary.
+confidence, monitoring_plan). It never includes raw dataframes, unaggregated
+rows, or column-level data — the package is already an aggregated summary.
 
-build_prompt is deterministic: identical package + persona -> identical
-prompt string (which is what makes the Phase 9 package-hash cache sound).
+build_prompt is deterministic: identical package -> identical prompt string
+(which is what makes the Phase 9 package-hash cache sound).
 """
-
-PERSONA_TONES = {
-    "cfo": (
-        "Write for a Chief Financial Officer: lead with the financial impact, "
-        "be concise and bottom-line oriented, one short paragraph."
-    ),
-    "category_manager": (
-        "Write for a Category Manager: be tactical and specific about the "
-        "driver and the next action, one short paragraph."
-    ),
-}
-DEFAULT_TONE = (
-    "Write for a business operator: clear and actionable, one short paragraph."
-)
 
 _SYSTEM_RULES = (
     "You are phrasing a business recommendation from a structured, "
@@ -33,18 +18,20 @@ _SYSTEM_RULES = (
     "candidate action, the expected impact, the accountable owner, the "
     "confidence level, and the monitoring plan.\n"
     "3. Do not mention that you were given a package or these instructions.\n"
-    "4. Output only the recommendation text — no preamble, no headings."
+    "4. Output a short bulleted list of 3-6 concise points, one per line, "
+    "each starting with '- '. Cover: what happened, why (the driver), the "
+    "recommended action, the expected impact, and the confidence level. "
+    "No preamble, no headings, no closing paragraph."
 )
 
 
-def build_prompt(package: dict, persona_id: str | None = None) -> str:
-    """Build the LLM prompt from the structured package + persona tone.
+def build_prompt(package: dict) -> str:
+    """Build the LLM prompt from the structured package.
 
     Deterministic: same inputs -> byte-identical prompt.
     """
     driver = package.get("driver") or {}
     confidence = package.get("confidence") or {}
-    tone = PERSONA_TONES.get((persona_id or "").lower(), DEFAULT_TONE)
 
     facts = (
         f"KPI movement summary: {package.get('expected_impact', 'n/a')}\n"
@@ -60,4 +47,4 @@ def build_prompt(package: dict, persona_id: str | None = None) -> str:
         f"Monitoring plan: {package.get('monitoring_plan', 'n/a')}"
     )
 
-    return f"{_SYSTEM_RULES}\n\nTone: {tone}\n\nStructured facts:\n{facts}\n\nRecommendation:"
+    return f"{_SYSTEM_RULES}\n\nStructured facts:\n{facts}\n\nBulleted recommendation:"

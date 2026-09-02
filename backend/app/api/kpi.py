@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.config import settings
-from app.api.integrations import apply_persona
 from app.core.activity.logger import log_activity
 from app.core.kpi_engine.computation import compute_kpi
 from app.core.kpi_engine.discovery import discover_kpis
@@ -95,7 +94,7 @@ def list_datasets(current_user: dict = Depends(get_current_user)) -> dict:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT dataset_id, source_ids, created_at FROM canonical_datasets "
+            "SELECT dataset_id, name, source_ids, created_at FROM canonical_datasets "
             "WHERE user_id = ? ORDER BY created_at DESC",
             (current_user["user_id"],),
         ).fetchall()
@@ -105,6 +104,7 @@ def list_datasets(current_user: dict = Depends(get_current_user)) -> dict:
         "datasets": [
             {
                 "dataset_id": r["dataset_id"],
+                "name": r["name"],
                 "source_ids": json.loads(r["source_ids"]),
                 "created_at": r["created_at"],
             }
@@ -218,11 +218,10 @@ def discover_for_dataset(dataset_id: str, current_user: dict = Depends(get_curre
 
 
 @router.get("/dataset/{dataset_id}")
-def list_kpis(dataset_id: str, persona_id: str | None = None, current_user: dict = Depends(get_current_user)) -> dict:
+def list_kpis(dataset_id: str, current_user: dict = Depends(get_current_user)) -> dict:
     """List stored KPIs for a dataset (without re-running discovery), sorted by materiality.
 
-    persona_id applies that persona's access rules (domain/role/column) to the
-    KPI list before responding.
+    Access is scoped by the logged-in user (Phase 15).
     """
     user_id = current_user["user_id"]
     dataset = _load_dataset_row(dataset_id, user_id)
@@ -244,14 +243,10 @@ def list_kpis(dataset_id: str, persona_id: str | None = None, current_user: dict
             )
         kpis.append(definition)
     kpis.sort(key=lambda k: k.get("materiality", 0.0), reverse=True)
-    return apply_persona(
-        {
-            "dataset_id": dataset_id,
-            "kpis": kpis,
-        },
-        persona_id,
-        dataset_id,
-    )
+    return {
+        "dataset_id": dataset_id,
+        "kpis": kpis,
+    }
 
 
 @router.get("/{kpi_id}/compute")

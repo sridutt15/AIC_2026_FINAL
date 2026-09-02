@@ -44,6 +44,37 @@ def _load_source_row(source_id: str, user_id: str) -> dict:
     return dict(row)
 
 
+def _auto_dataset_name(source_metas: list, target_cadence: str | None, user_id: str) -> str:
+    """Human-readable name from the merged sources + join grain (Phase 18).
+
+    e.g. "sales_and_inventory (daily)". Collisions for the same user get a
+    numeric suffix: "... 2", "... 3" — checked against their datasets.
+    """
+    stems = []
+    for meta in source_metas:
+        stem = Path(meta["filename"]).stem.lower().replace(" ", "_").replace("-", "_")
+        stems.append(stem)
+    base = "_and_".join(stems)
+    cadence = (target_cadence or "").strip().lower()
+    name = f"{base} ({cadence})" if cadence else base
+
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT name FROM canonical_datasets WHERE user_id = ? AND name IS NOT NULL",
+            (user_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    existing = {r["name"] for r in rows}
+    if name not in existing:
+        return name
+    n = 2
+    while f"{name} {n}" in existing:
+        n += 1
+    return f"{name} {n}"
+
+
 def _load_source_df(source: dict, user_id: str) -> pd.DataFrame:
     """Load a source's raw dataframe from Storage (post-ownership-check)."""
     return load_source_dataframe(source, user_id)
@@ -127,6 +158,7 @@ def build_canonical(req: BuildRequest, current_user: dict = Depends(get_current_
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     dataset_id = str(uuid.uuid4())
+    dataset_name = _auto_dataset_name(sources_meta, req.target_cadence, user_id)
     csv_bytes = canonical_df.to_csv(index=False).encode()
     try:
         storage.upload_file(
@@ -144,11 +176,12 @@ def build_canonical(req: BuildRequest, current_user: dict = Depends(get_current_
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO canonical_datasets (dataset_id, user_id, source_ids, join_config_json, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO canonical_datasets (dataset_id, user_id, name, source_ids, join_config_json, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (
                 dataset_id,
                 user_id,
+                dataset_name,
                 json.dumps(req.source_ids),
                 json.dumps(join_config),
                 created_at,
@@ -160,6 +193,7 @@ def build_canonical(req: BuildRequest, current_user: dict = Depends(get_current_
 
     return {
         "dataset_id": dataset_id,
+        "name": dataset_name,
         "created_at": created_at,
         "row_count": int(len(canonical_df)),
         "column_count": int(len(canonical_df.columns)),
@@ -175,7 +209,7 @@ def preview_canonical(dataset_id: str, page: int = 1, current_user: dict = Depen
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT dataset_id, source_ids, join_config_json, created_at "
+            "SELECT dataset_id, name, source_ids, join_config_json, created_at "
             "FROM canonical_datasets WHERE dataset_id = ? AND user_id = ?",
             (dataset_id, user_id),
         ).fetchone()
@@ -192,6 +226,7 @@ def preview_canonical(dataset_id: str, page: int = 1, current_user: dict = Depen
 
     return {
         "dataset_id": dataset_id,
+        "name": row["name"],
         "source_ids": json.loads(row["source_ids"]),
         "join_config": json.loads(row["join_config_json"]),
         "created_at": row["created_at"],
@@ -202,6 +237,36 @@ def preview_canonical(dataset_id: str, page: int = 1, current_user: dict = Depen
         "total_pages": max(1, -(-len(df) // PREVIEW_ROWS)),
         "preview": _frame_to_records(slice_df),
     }
+
+
+class RenameRequest(BaseModel):
+    name: str
+
+
+@router.patch("/{dataset_id}")
+def rename_canonical(dataset_id: str, body: RenameRequest, current_user: dict = Depends(get_current_user)) -> dict:
+    """Rename a canonical dataset (owner only; clean 404 otherwise)."""
+    user_id = current_user["user_id"]
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Name must not be empty.")
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT dataset_id FROM canonical_datasets "
+            "WHERE dataset_id = ? AND user_id = ?",
+            (dataset_id, user_id),
+        ).fetchone()
+        if row is None:
+            raise not_found(f"Canonical dataset {dataset_id}")
+        conn.execute(
+            "UPDATE canonical_datasets SET name = ? WHERE dataset_id = ? AND user_id = ?",
+            (name, dataset_id, user_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"dataset_id": dataset_id, "name": name, "renamed": True}
 
 
 @router.delete("/{dataset_id}")

@@ -39,6 +39,23 @@ export async function previewCanonical(
   return (await response.json()) as CanonicalDatasetInfo
 }
 
+/** PATCH /canonical/{dataset_id} — rename a dataset. */
+export async function renameCanonical(
+  datasetId: string,
+  name: string,
+): Promise<{ dataset_id: string; name: string; renamed: boolean }> {
+  const response = await authFetch(`${API_BASE_URL}/canonical/${datasetId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!response.ok) {
+    const detail = await response.text()
+    throw new Error(`Failed to rename dataset (${response.status}): ${detail}`)
+  }
+  return (await response.json()) as { dataset_id: string; name: string; renamed: boolean }
+}
+
 /** DELETE /canonical/{dataset_id} — delete a dataset and all derived KPI rows (sources kept). */
 export async function deleteCanonical(datasetId: string): Promise<{ cascaded_kpis: string[] }> {
   const response = await authFetch(`${API_BASE_URL}/canonical/${datasetId}`, {

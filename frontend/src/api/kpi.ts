@@ -1,6 +1,5 @@
 import { authFetch } from './authClient'
 import { API_BASE_URL } from './health'
-import { withPersona } from './persona'
 import type { DatasetListEntry, KpiComputeResponse, KpiInfo } from '../types'
 
 /** GET /kpi/datasets — list canonical datasets for the selector. */
@@ -26,15 +25,11 @@ export async function discoverKpis(datasetId: string): Promise<KpiInfo[]> {
   return body.kpis
 }
 
-/** GET /kpi/dataset/{dataset_id} — previously discovered KPIs, persona-filtered. */
+/** GET /kpi/dataset/{dataset_id} — previously discovered KPIs. */
 export async function listKpis(
   datasetId: string,
-  personaId: string | null = null,
 ): Promise<KpiInfo[]> {
-  const url = withPersona(
-    `${API_BASE_URL}/kpi/dataset/${datasetId}`,
-    personaId,
-  )
+  const url = `${API_BASE_URL}/kpi/dataset/${datasetId}`
   const response = await authFetch(url)
   if (!response.ok) {
     throw new Error(`Failed to list KPIs (${response.status})`)

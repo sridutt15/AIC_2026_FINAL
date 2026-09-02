@@ -13,7 +13,6 @@ import {
 import { listDatasets, listKpis } from '../api/kpi'
 import { getAnomalies } from '../api/anomaly'
 import { computeKpi } from '../api/kpi'
-import { usePersonaId } from '../context/PersonaContext'
 import type {
   AnomalyDetections,
   AnomalyFinding,
@@ -38,7 +37,6 @@ function fmt(value: number | null): string {
 }
 
 export default function AnomalyPage() {
-  const personaId = usePersonaId()
   const [datasets, setDatasets] = useState<DatasetListEntry[]>([])
   const [datasetId, setDatasetId] = useState<string>('')
   const [kpis, setKpis] = useState<KpiInfo[]>([])
@@ -65,20 +63,20 @@ export default function AnomalyPage() {
     setKpis([])
     setComputation(null)
     setAnomalies(null)
-    listKpis(datasetId, personaId)
+    listKpis(datasetId)
       .then((list) => {
         const computable = list.filter((k) => k.status !== 'invalid')
         setKpis(computable)
         if (computable.length > 0) setKpiId(computable[0].kpi_id)
       })
       .catch((err) => setError(String(err)))
-  }, [datasetId, personaId])
+  }, [datasetId])
 
   useEffect(() => {
     if (!kpiId) return
     setLoading(true)
     setError(null)
-    Promise.all([computeKpi(kpiId), getAnomalies(kpiId, false, personaId)])
+    Promise.all([computeKpi(kpiId), getAnomalies(kpiId, false)])
       .then(([comp, anom]) => {
         setComputation(comp.computation)
         setAnomalies(anom.anomalies)
@@ -87,7 +85,7 @@ export default function AnomalyPage() {
       })
       .catch((err) => setError(String(err)))
       .finally(() => setLoading(false))
-  }, [kpiId, personaId])
+  }, [kpiId])
 
   const chartData = useMemo(() => {
     if (!computation) return []
@@ -131,7 +129,7 @@ export default function AnomalyPage() {
             </option>
             {datasets.map((d) => (
               <option key={d.dataset_id} value={d.dataset_id}>
-                {d.dataset_id.slice(0, 8)}…
+                {d.name || d.dataset_id.slice(0, 8) + '…'}
               </option>
             ))}
           </select>

@@ -12,7 +12,6 @@ import {
 } from 'recharts'
 import { listDatasets, listKpis } from '../api/kpi'
 import { getDrivers } from '../api/drivers'
-import { usePersonaId } from '../context/PersonaContext'
 import type { DriverFinding, DriversResponse } from '../types'
 import EvidencePanel from '../components/EvidencePanel'
 import ConfidenceBadge, { AbstainCard } from '../components/ConfidenceBadge'
@@ -29,8 +28,7 @@ function fmt(value: number | null | undefined): string {
 }
 
 export default function DriversPage() {
-  const personaId = usePersonaId()
-  const [datasets, setDatasets] = useState<{ dataset_id: string }[]>([])
+  const [datasets, setDatasets] = useState<{ dataset_id: string; name?: string | null }[]>([])
   const [datasetId, setDatasetId] = useState('')
   const [kpis, setKpis] = useState<{ kpi_id: string; name: string; status: string; materiality?: number }[]>([])
   const [kpiId, setKpiId] = useState('')
@@ -53,24 +51,24 @@ export default function DriversPage() {
     setKpiId('')
     setKpis([])
     setDrivers(null)
-    listKpis(datasetId, personaId)
+    listKpis(datasetId)
       .then((list) => {
         const computable = list.filter((k) => k.status !== 'invalid')
         setKpis(computable)
         if (computable.length > 0) setKpiId(computable[0].kpi_id)
       })
       .catch((err) => setError(String(err)))
-  }, [datasetId, personaId])
+  }, [datasetId])
 
   useEffect(() => {
     if (!kpiId) return
     setLoading(true)
     setError(null)
-    getDrivers(kpiId, false, personaId)
+    getDrivers(kpiId, false)
       .then(setDrivers)
       .catch((err) => setError(String(err)))
       .finally(() => setLoading(false))
-  }, [kpiId, personaId])
+  }, [kpiId])
 
   const topFinding = drivers?.findings.find((f) => !isAbstained(f)) ?? null
 
@@ -108,7 +106,7 @@ export default function DriversPage() {
             </option>
             {datasets.map((d) => (
               <option key={d.dataset_id} value={d.dataset_id}>
-                {d.dataset_id.slice(0, 8)}…
+                {d.name || d.dataset_id.slice(0, 8) + '…'}
               </option>
             ))}
           </select>

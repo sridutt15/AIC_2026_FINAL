@@ -40,7 +40,7 @@ def _patch_llm(monkeypatch):
 
 
 def test_second_call_served_from_cache(ready_kpi, monkeypatch):
-    """Same package twice -> identical text, second call cached=true, and
+    """Same package twice -> identical bullets, second call cached=true, and
     the mocked LLM invoked exactly once (no duplicate API cost)."""
     client, kpi_id = ready_kpi
     calls = _patch_llm(monkeypatch)
@@ -48,7 +48,7 @@ def test_second_call_served_from_cache(ready_kpi, monkeypatch):
     first = client.get(f"/recommendations/{kpi_id}")
     assert first.status_code == 200
     body1 = first.json()
-    assert body1["recommendation_text"].startswith("LLM recommendation #1")
+    assert body1["recommendation_bullets"][0].startswith("LLM recommendation #1")
     assert body1["llm_call_metadata"]["cached"] is False
     assert body1["llm_call_metadata"]["prompt_tokens"] == 150
     assert body1["llm_call_metadata"]["completion_tokens"] == 40
@@ -57,7 +57,7 @@ def test_second_call_served_from_cache(ready_kpi, monkeypatch):
     second = client.get(f"/recommendations/{kpi_id}")
     assert second.status_code == 200
     body2 = second.json()
-    assert body2["recommendation_text"] == body1["recommendation_text"]
+    assert body2["recommendation_bullets"] == body1["recommendation_bullets"]
     assert body2["llm_call_metadata"]["cached"] is True
     assert calls["n"] == 1, "the LLM must be invoked exactly once for an identical package"
 

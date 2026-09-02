@@ -1,6 +1,5 @@
 import { authFetch } from './authClient'
 import { API_BASE_URL } from './health'
-import { withPersona } from './persona'
 import type {
   LlmLedgerResponse,
   RecommendationPackageResponse,
@@ -13,10 +12,8 @@ import type {
  */
 export async function getRecommendationPackage(
   kpiId: string,
-  personaId: string | null = null,
 ): Promise<RecommendationPackageResponse> {
-  const query = withPersona('', personaId)
-  const url = `${API_BASE_URL}/recommendations/${kpiId}/package${query}`
+    const url = `${API_BASE_URL}/recommendations/${kpiId}/package`
   const response = await authFetch(url)
   if (!response.ok) {
     const detail = await response.text()
@@ -32,10 +29,8 @@ export async function getRecommendationPackage(
  */
 export async function getRecommendation(
   kpiId: string,
-  personaId: string | null = null,
 ): Promise<RecommendationResponse> {
-  const query = withPersona('', personaId)
-  const url = `${API_BASE_URL}/recommendations/${kpiId}${query}`
+    const url = `${API_BASE_URL}/recommendations/${kpiId}`
   const response = await authFetch(url)
   if (!response.ok) {
     const detail = await response.text()

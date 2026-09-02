@@ -1,16 +1,13 @@
 import { authFetch } from './authClient'
 import { API_BASE_URL } from './health'
-import { withPersona } from './persona'
 import type { DriversResponse, EvidenceResponse } from '../types'
 
 /** GET /drivers/{kpi_id} — decompose the KPI's movement across dimensions. */
 export async function getDrivers(
   kpiId: string,
   refresh = false,
-  personaId: string | null = null,
 ): Promise<DriversResponse> {
   let query = refresh ? '?refresh=true' : ''
-  query = withPersona(query, personaId)
   const url = `${API_BASE_URL}/drivers/${kpiId}${query}`
   const response = await authFetch(url)
   if (!response.ok) {

@@ -1,5 +1,5 @@
-"""Phase 9 API tests: /insights and /recommendations package — deterministic,
-persona-specific, zero LLM."""
+"""Phase 9/18 API tests: /insights and /recommendations package — deterministic
+bulleted insights, zero LLM."""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -25,28 +25,26 @@ def test_insight_generated_and_deterministic(ready_kpi):
     assert first.status_code == 200
     body = first.json()
     assert body["deterministic"] is True
-    assert body["text"], "insight text must be non-empty"
-    assert body["kpi_name"] in body["text"]
+    assert body["bullets"], "insight bullets must be non-empty"
+    joined = " ".join(body["bullets"])
+    assert body["kpi_name"] in joined
     assert body["confidence"] is not None
 
-    # Regenerate: identical text, previous_text reported for the diff check.
+    # Regenerate: identical bullets, previous reported for the diff check.
     second = client.get(f"/insights/{kpi_id}?refresh=true")
     assert second.status_code == 200
     regen = second.json()
-    assert regen["text"] == body["text"], "regeneration must be byte-identical"
-    assert regen["previous_text"] == body["text"]
+    assert regen["bullets"] == body["bullets"], "regeneration must be identical"
+    assert regen["previous_bullets"] == body["bullets"]
 
 
-def test_insight_persona_tones_differ(ready_kpi):
+def test_insight_is_bulleted_list(ready_kpi):
+    """Phase 18: the insight response carries a list of short bullet strings."""
     client, kpi_id = ready_kpi
-    cm = client.get(f"/insights/{kpi_id}?persona_id=category_manager").json()
-    cfo = client.get(f"/insights/{kpi_id}?persona_id=cfo").json()
-    assert cm["persona_name"] == "Category Manager"
-    assert cfo["persona_name"] == "CFO"
-    # CFO gets the headline only; Category Manager gets driver detail.
-    assert "Top driver" in cm["text"]
-    assert "Top driver" not in cfo["text"]
-    assert cm["text"] != cfo["text"]
+    body = client.get(f"/insights/{kpi_id}").json()
+    assert isinstance(body["bullets"], list)
+    assert all(isinstance(b, str) and b.strip() for b in body["bullets"])
+    assert len(body["bullets"]) >= 2  # headline + at least confidence
 
 
 def test_recommendation_package_has_seven_fields(ready_kpi):
@@ -61,7 +59,6 @@ def test_recommendation_package_has_seven_fields(ready_kpi):
         "owner", "confidence", "monitoring_plan",
     ):
         assert field in pkg and pkg[field], f"field {field} missing/null"
-    assert pkg["owner"] in ("cfo", "category_manager")
 
     # Package build is deterministic too.
     again = client.get(f"/recommendations/{kpi_id}/package").json()

@@ -79,6 +79,7 @@ class CanonicalDataset(Base):
 
     dataset_id = Column(Text, primary_key=True)
     user_id = Column(Text)
+    name = Column(Text)
     user_id = Column(Text)
     source_ids = Column(Text)
     join_config_json = Column(Text)

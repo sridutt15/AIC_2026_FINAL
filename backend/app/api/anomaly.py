@@ -1,7 +1,7 @@
 """Anomaly API — run all detectors on a KPI's trend; cache per KPI+computation.
 
 Phase 8: each detection set carries a confidence result; abstain-level
-detections are replaced by an honest insufficient-evidence message. persona_id
+detections are replaced by an honest insufficient-evidence message.
 filters the response per the persona's access rules.
 """
 
@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.api.integrations import apply_confidence, apply_persona
+from app.api.integrations import apply_confidence
 from app.core.anomaly.detectors import run_all_detectors
 from app.db import get_connection
 from app.core.auth.security import get_current_user
@@ -120,12 +120,12 @@ def _build_anomaly_findings(
 
 
 @router.get("/{kpi_id}")
-def get_anomalies(kpi_id: str, refresh: bool = False, persona_id: str | None = None, current_user: dict = Depends(get_current_user)) -> dict:
+def get_anomalies(kpi_id: str, refresh: bool = False, current_user: dict = Depends(get_current_user)) -> dict:
     """Run detectors on the KPI's computed trend; return + cache per KPI.
 
     Cached result is returned unless ?refresh=true (re-runs and overwrites).
     Every detection carries a confidence level; abstain-level detections are
-    replaced by an honest message. persona_id filters per access rules.
+    replaced by an honest message.
     """
     user_id = current_user["user_id"]
     definition, computation = _get_kpi_and_computation(kpi_id, user_id)
@@ -158,9 +158,7 @@ def get_anomalies(kpi_id: str, refresh: bool = False, persona_id: str | None = N
                 period_count=computation.get("period_count"),
                 kpi_status=definition.get("status"),
             )
-            return apply_persona(
-                response, persona_id, definition.get("dataset_id")
-            )
+            return response
 
     trend = computation.get("trend") or []
     detections = run_all_detectors(trend)
@@ -202,4 +200,4 @@ def get_anomalies(kpi_id: str, refresh: bool = False, persona_id: str | None = N
         period_count=computation.get("period_count"),
         kpi_status=definition.get("status"),
     )
-    return apply_persona(response, persona_id, definition.get("dataset_id"))
+    return response

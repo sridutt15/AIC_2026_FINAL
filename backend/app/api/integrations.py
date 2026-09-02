@@ -1,24 +1,18 @@
-"""Shared API-layer helpers for confidence scoring + persona filtering (Phase 8).
+"""Shared API-layer helpers for confidence scoring (Phases 8/18).
 
 Every findings/KPI response path uses these so that:
   - each finding carries a `confidence` result from score_confidence
   - abstain-level findings are replaced by an honest "insufficient evidence"
     message instead of a fabricated conclusion
-  - persona access rules are applied before the response leaves the API
+
+Persona filtering was removed in Phase 18 — access control is the logged-in
+user (Phases 14/15).
 """
 
 import json
 
 from app.core.confidence.scorer import score_confidence
-from app.core.persona.access_control import filter_for_persona
 from app.db import get_connection
-
-
-def get_persona(persona_id: str | None) -> dict | None:
-    """Persona row by id; None when absent. Re-exported for API modules."""
-    from app.api.persona import get_persona as _get
-
-    return _get(persona_id)
 
 
 def quality_report_for_dataset(dataset_id: str) -> dict | None:
@@ -108,12 +102,3 @@ def apply_confidence(
             }
         out.append(scored)
     return out
-
-
-def apply_persona(data, persona_id: str | None, dataset_id: str | None = None):
-    """Persona-filter a response payload (pass-through when no persona selected)."""
-    persona = get_persona(persona_id)
-    if not persona:
-        return data
-    contracts = contracts_for_dataset(dataset_id) if dataset_id else []
-    return filter_for_persona(data, persona, contracts)
