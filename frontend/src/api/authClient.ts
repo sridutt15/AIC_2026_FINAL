@@ -22,6 +22,16 @@ export interface AppErrorResponse {
   error: { code: string; message: string }
 }
 
+/** The logged-in user's id from the cached session (null when logged out). */
+export function getUserId(): string | null {
+  try {
+    const raw = localStorage.getItem('user')
+    return raw ? (JSON.parse(raw) as { user_id?: string }).user_id ?? null : null
+  } catch {
+    return null
+  }
+}
+
 export class ApiError extends Error {
   status: number
   code: string

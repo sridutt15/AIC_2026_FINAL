@@ -12,8 +12,8 @@ import {
 } from 'recharts'
 import { listDatasets } from '../api/kpi'
 import { runAllDrivers } from '../api/drivers'
-import { cachedBatch } from '../api/batchCache'
-import type { BatchDriverResult, DatasetListEntry } from '../types'
+import { getCachedBatch, invalidateBatch, runAndCacheBatch } from '../api/batchCache'
+import type { BatchDriverResult, DatasetListEntry, RunAllDriversResponse } from '../types'
 import EvidencePanel from '../components/EvidencePanel'
 import ConfidenceBadge, { AbstainCard } from '../components/ConfidenceBadge'
 
@@ -47,29 +47,51 @@ export default function DriversPage() {
       .catch((err) => setError(String(err)))
   }, [])
 
-  // Sidebar navigation is the trigger: opening this page runs the driver
-  // decomposition for every computable KPI in one batch (cached per dataset).
+  // Navigation NEVER triggers decomposition: show whatever a previous
+  // Discover Drivers run cached for this dataset; empty until the button.
   useEffect(() => {
     if (!datasetId) return
     setError(null)
     setFailures([])
     setSelectedKpiId('')
     setSelectedFinding(null)
-    setLoading(true)
-    cachedBatch(`drivers:${datasetId}`, () => runAllDrivers(datasetId))
-      .then((resp) => {
-        setResults(resp.results)
-        setFailures(resp.failures.map((f) => `${f.kpi_id.slice(0, 8)}…: ${f.error}`))
-        const firstOk = resp.results.find((r) => !r.error && r.findings.some((f) => !isAbstained(f)))
-          ?? resp.results.find((r) => !r.error)
-        if (firstOk) setSelectedKpiId(firstOk.kpi_id)
-      })
-      .catch((err) => {
-        setResults([])
-        setError(String(err))
-      })
-      .finally(() => setLoading(false))
+    const cached = getCachedBatch<RunAllDriversResponse>(`drivers:${datasetId}`)
+    if (cached) {
+      setResults(cached.results)
+      setFailures(cached.failures.map((f) => `${f.kpi_id.slice(0, 8)}…: ${f.error}`))
+      const firstOk =
+        cached.results.find((r) => !r.error && r.findings.some((f) => !isAbstained(f))) ??
+        cached.results.find((r) => !r.error)
+      if (firstOk) setSelectedKpiId(firstOk.kpi_id)
+    } else {
+      setResults([])
+    }
   }, [datasetId])
+
+  const handleDiscover = async (force = false) => {
+    if (!datasetId) return
+    setLoading(true)
+    setError(null)
+    setFailures([])
+    setSelectedFinding(null)
+    try {
+      if (force) invalidateBatch(`drivers:${datasetId}`)
+      const resp = await runAndCacheBatch(
+        `drivers:${datasetId}`,
+        () => runAllDrivers(datasetId),
+      )
+      setResults(resp.results)
+      setFailures(resp.failures.map((f) => `${f.kpi_id.slice(0, 8)}…: ${f.error}`))
+      const firstOk =
+        resp.results.find((r) => !r.error && r.findings.some((f) => !isAbstained(f))) ??
+        resp.results.find((r) => !r.error)
+      setSelectedKpiId(firstOk?.kpi_id ?? '')
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const selected = results.find((r) => r.kpi_id === selectedKpiId) ?? null
 
@@ -95,9 +117,10 @@ export default function DriversPage() {
       <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <h2 className="text-base font-semibold text-gray-800">Driver analysis</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Opening this page runs the waterfall decomposition for every computable KPI in
-          the dataset in one operation — slice contributions reconcile to the total, every
-          finding carries traceable evidence.
+          Click Discover Drivers to run the waterfall decomposition for every
+          computable KPI in the dataset in one operation — slice contributions
+          reconcile to the total, every finding carries traceable evidence.
+          Results are cached per dataset.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <select
@@ -114,6 +137,21 @@ export default function DriversPage() {
               </option>
             ))}
           </select>
+          <button
+            onClick={() => void handleDiscover()}
+            disabled={loading || !datasetId}
+            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {loading ? 'Discovering drivers…' : 'Discover Drivers'}
+          </button>
+          <button
+            onClick={() => void handleDiscover(true)}
+            disabled={loading || !datasetId}
+            className="rounded-md border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+            title="Re-run driver decomposition for all KPIs"
+          >
+            Refresh
+          </button>
           {results.filter((r) => !r.error).length > 1 && (
             <select
               value={selectedKpiId}
@@ -134,9 +172,6 @@ export default function DriversPage() {
                   </option>
                 ))}
             </select>
-          )}
-          {loading && (
-            <span className="text-sm text-gray-400">Decomposing all KPIs…</span>
           )}
           {!loading && results.length > 0 && (
             <span className="text-sm text-green-600">
@@ -161,7 +196,8 @@ export default function DriversPage() {
 
       {!loading && results.length === 0 && !error && (
         <p className="rounded-lg border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
-          No computable KPIs for this dataset — discover KPIs first on the KPIs page.
+          Nothing cached yet — click Discover Drivers above. (KPIs must be
+          discovered first on the KPIs page.)
         </p>
       )}
 

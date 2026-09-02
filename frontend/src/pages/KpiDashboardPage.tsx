@@ -11,10 +11,11 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { computeAllKpis, discoverKpis, listDatasets, listKpis } from '../api/kpi'
-import { cachedBatch, invalidateDataset } from '../api/batchCache'
+import { computeAllKpis, discoverKpis, listDatasets } from '../api/kpi'
+import { getCachedBatch, invalidateDataset, runAndCacheBatch } from '../api/batchCache'
 import type {
   BatchKpiResult,
+  ComputeAllResponse,
   DatasetListEntry,
   KpiComputation,
   KpiStatus,
@@ -125,33 +126,24 @@ export default function KpiDashboardPage() {
       .catch((err) => setError(String(err)))
   }, [])
 
-  // Load previously discovered KPIs (and their cached computations) — no
-  // automatic discovery on page open; the user clicks Discover KPIs.
+  // Navigation NEVER triggers computation: render whatever is cached for
+  // this dataset (a previous Discover run); if none, the page stays empty
+  // until the user clicks Discover KPIs.
   useEffect(() => {
     if (!selected) return
     setDetail(null)
     setError(null)
     setFailures([])
-    listKpis(selected)
-      .then((list) => {
-        if (list.length === 0) {
-          setBatch([])
-          return
-        }
-        cachedBatch(`compute:${selected}`, () => computeAllKpis(selected))
-          .then((resp) => {
-            setBatch(resp.results)
-            setFailures(resp.failures.map((f) => `${f.kpi_id.slice(0, 8)}…: ${f.error}`))
-          })
-          .catch((err) => {
-            setBatch([])
-            setError(String(err))
-          })
-      })
-      .catch(() => setBatch([]))
+    const cached = getCachedBatch<ComputeAllResponse>(`compute:${selected}`)
+    if (cached) {
+      setBatch(cached.results)
+      setFailures(cached.failures.map((f) => `${f.kpi_id.slice(0, 8)}…: ${f.error}`))
+    } else {
+      setBatch([])
+    }
   }, [selected])
 
-  const handleDiscover = async () => {
+  const handleDiscover = async (force = false) => {
     if (!selected) return
     setDiscovering(true)
     setError(null)
@@ -159,10 +151,15 @@ export default function KpiDashboardPage() {
     setBatch([])
     setDetail(null)
     try {
+      if (force) invalidateDataset(selected)
       await discoverKpis(selected)
-      invalidateDataset(selected)
       setComputing(true)
-      const resp = await computeAllKpis(selected)
+      // runAndCacheBatch stores the result; returning to this page later
+      // renders it instantly with zero API calls.
+      const resp = await runAndCacheBatch(
+        `compute:${selected}`,
+        () => computeAllKpis(selected),
+      )
       setBatch(resp.results)
       setFailures(resp.failures.map((f) => `${f.kpi_id.slice(0, 8)}…: ${f.error}`))
     } catch (err) {
@@ -210,7 +207,7 @@ export default function KpiDashboardPage() {
             ))}
           </select>
           <button
-            onClick={handleDiscover}
+            onClick={() => void handleDiscover()}
             disabled={computingAll || !selected}
             className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
           >
@@ -219,6 +216,14 @@ export default function KpiDashboardPage() {
               : computing
                 ? 'Computing all KPIs…'
                 : 'Discover KPIs'}
+          </button>
+          <button
+            onClick={() => void handleDiscover(true)}
+            disabled={computingAll || !selected}
+            className="rounded-md border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+            title="Re-run discovery and recompute everything"
+          >
+            Refresh
           </button>
           {computingAll && (
             <span className="text-sm text-gray-400">

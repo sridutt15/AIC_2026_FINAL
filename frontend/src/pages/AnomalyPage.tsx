@@ -12,10 +12,11 @@ import {
 } from 'recharts'
 import { listDatasets } from '../api/kpi'
 import { runAllAnomalies } from '../api/anomaly'
-import { cachedBatch } from '../api/batchCache'
+import { getCachedBatch, invalidateBatch, runAndCacheBatch } from '../api/batchCache'
 import type {
   BatchAnomalyResult,
   DatasetListEntry,
+  RunAllAnomaliesResponse,
 } from '../types'
 import ConfidenceBadge, { AbstainCard } from '../components/ConfidenceBadge'
 
@@ -50,28 +51,45 @@ export default function AnomalyPage() {
       .catch((err) => setError(String(err)))
   }, [])
 
-  // Sidebar navigation is the trigger: opening this page runs anomaly
-  // discovery for the whole dataset in one batch (cached per dataset —
-  // re-navigation never re-runs a completed batch).
+  // Navigation NEVER triggers detection: show whatever a previous Discover
+  // Anomalies run cached for this dataset; empty until the button is used.
   useEffect(() => {
     if (!datasetId) return
     setError(null)
     setFailures([])
     setSelectedKpiId('')
-    setLoading(true)
-    cachedBatch(`anomaly:${datasetId}`, () => runAllAnomalies(datasetId))
-      .then((resp) => {
-        setResults(resp.results)
-        setFailures(resp.failures.map((f) => `${f.kpi_id.slice(0, 8)}…: ${f.error}`))
-        const firstOk = resp.results.find((r) => !r.error && r.anomalies)
-        if (firstOk) setSelectedKpiId(firstOk.kpi_id)
-      })
-      .catch((err) => {
-        setResults([])
-        setError(String(err))
-      })
-      .finally(() => setLoading(false))
+    const cached = getCachedBatch<RunAllAnomaliesResponse>(`anomaly:${datasetId}`)
+    if (cached) {
+      setResults(cached.results)
+      setFailures(cached.failures.map((f) => `${f.kpi_id.slice(0, 8)}…: ${f.error}`))
+      const firstOk = cached.results.find((r) => !r.error && r.anomalies)
+      if (firstOk) setSelectedKpiId(firstOk.kpi_id)
+    } else {
+      setResults([])
+    }
   }, [datasetId])
+
+  const handleDiscover = async (force = false) => {
+    if (!datasetId) return
+    setLoading(true)
+    setError(null)
+    setFailures([])
+    try {
+      if (force) invalidateBatch(`anomaly:${datasetId}`)
+      const resp = await runAndCacheBatch(
+        `anomaly:${datasetId}`,
+        () => runAllAnomalies(datasetId),
+      )
+      setResults(resp.results)
+      setFailures(resp.failures.map((f) => `${f.kpi_id.slice(0, 8)}…: ${f.error}`))
+      const firstOk = resp.results.find((r) => !r.error && r.anomalies)
+      setSelectedKpiId(firstOk?.kpi_id ?? '')
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const selected = results.find((r) => r.kpi_id === selectedKpiId) ?? null
 
@@ -106,9 +124,9 @@ export default function AnomalyPage() {
       <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <h2 className="text-base font-semibold text-gray-800">Anomaly detection</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Opening this page discovers anomalies for every computable KPI in the dataset —
-          change points (PELT), control-limit breaches (±3σ), and robust MAD outliers —
-          in one operation.
+          Click Discover Anomalies to run detection for every computable KPI in the
+          dataset — change points (PELT), control-limit breaches (±3σ), and robust
+          MAD outliers — in one operation. Results are cached per dataset.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <select
@@ -125,6 +143,21 @@ export default function AnomalyPage() {
               </option>
             ))}
           </select>
+          <button
+            onClick={() => void handleDiscover()}
+            disabled={loading || !datasetId}
+            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {loading ? 'Discovering anomalies…' : 'Discover Anomalies'}
+          </button>
+          <button
+            onClick={() => void handleDiscover(true)}
+            disabled={loading || !datasetId}
+            className="rounded-md border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+            title="Re-run anomaly detection for all KPIs"
+          >
+            Refresh
+          </button>
           {results.filter((r) => !r.error).length > 1 && (
             <select
               value={selectedKpiId}
@@ -142,9 +175,6 @@ export default function AnomalyPage() {
                   </option>
                 ))}
             </select>
-          )}
-          {loading && (
-            <span className="text-sm text-gray-400">Discovering anomalies for all KPIs…</span>
           )}
           {!loading && results.length > 0 && (
             <span className="text-sm text-green-600">
@@ -169,7 +199,8 @@ export default function AnomalyPage() {
 
       {!loading && results.length === 0 && !error && (
         <p className="rounded-lg border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
-          No computable KPIs for this dataset — discover KPIs first on the KPIs page.
+          Nothing cached yet — click Discover Anomalies above. (KPIs must be
+          discovered first on the KPIs page.)
         </p>
       )}
 
