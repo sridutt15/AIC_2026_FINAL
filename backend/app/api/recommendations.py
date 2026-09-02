@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.drivers import get_drivers
 from app.config import settings
+from app.core.activity.logger import log_activity
 from app.core.llm.cache import log_llm_call, lookup_cached_call, package_hash
 from app.core.llm.client import call_llm
 from app.core.llm.prompt_templates import build_prompt
@@ -174,6 +175,10 @@ def get_recommendation(kpi_id: str, persona_id: str | None = None, current_user:
     texts[hash_value] = result["text"]
     _store_texts(kpi_id, texts, user_id)
 
+    log_activity(
+        user_id, "recommendation_generated", "kpi", kpi_id,
+        "Generated an LLM recommendation",
+    )
     return {
         "kpi_id": kpi_id,
         "persona_id": persona_id,

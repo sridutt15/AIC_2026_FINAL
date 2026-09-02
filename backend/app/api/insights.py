@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.drivers import get_drivers
+from app.core.activity.logger import log_activity
 from app.core.insight_templates.generator import generate_insight
 from app.core.persona.access_control import filter_for_persona
 from app.core.telemetry.logger import timed_stage
@@ -145,6 +146,10 @@ def get_insight(kpi_id: str, persona_id: str | None = None, refresh: bool = Fals
     )
     generated_at = _store_insight(insight_id, kpi_id, persona_id, text, user_id)
 
+    log_activity(
+        user_id, "insight_generated", "kpi", kpi_id,
+        f"Generated insight for {kpi_name}",
+    )
     return {
         "insight_id": insight_id,
         "kpi_id": kpi_id,

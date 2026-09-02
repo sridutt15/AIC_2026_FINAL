@@ -1,28 +1,39 @@
 """Ingestion API — upload a raw source file, list, and delete uploaded sources."""
 
 import json
-import shutil
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
-from app.config import settings
+from app.core.activity.logger import log_activity
+from app.core.storage import supabase_client as storage
 from app.db import get_connection
 from app.core.auth.security import get_current_user
 from app.core.errors import not_found
 
 router = APIRouter(prefix="/ingestion", tags=["ingestion"], dependencies=[Depends(get_current_user)])
 
+_ALLOWED_EXTENSIONS = ("csv", "xlsx", "xls", "json")
+
 
 def _extension(filename: str | None) -> str:
     if not filename or "." not in filename:
         raise HTTPException(status_code=400, detail="Filename must have an extension.")
-    ext = Path(filename).suffix.lower().lstrip(".")
-    if ext not in ("csv", "xlsx", "xls", "json"):
+    ext = filename.rsplit(".", 1)[-1].lower()
+    if ext not in _ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"Unsupported file type: .{ext}")
     return ext
+
+
+def source_file_path(user_id: str, source_id: str, filename: str) -> str:
+    """Storage path for a source's raw file: {user_id}/{source_id}/{filename}."""
+    return f"{user_id}/{source_id}/{filename}"
+
+
+def canonical_file_path(user_id: str, dataset_id: str) -> str:
+    """Storage path for a canonical dataset CSV: {user_id}/canonical/{dataset_id}.csv."""
+    return f"{user_id}/canonical/{dataset_id}.csv"
 
 
 @router.post("/upload")
@@ -32,17 +43,20 @@ def upload_source(
     cadence: str = Form(...),
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Save the raw file under data/uploads/{source_id}/ and record it in `sources`."""
+    """Store the raw file in Supabase Storage and record it in `sources`."""
     ext = _extension(file.filename)
     source_id = str(uuid.uuid4())
-    dest_dir = settings.UPLOADS_DIR / source_id
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / f"source.{ext}"
 
     content = file.file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
-    dest.write_bytes(content)
+
+    content_type = file.content_type or "application/octet-stream"
+    storage.upload_file(
+        source_file_path(current_user["user_id"], source_id, file.filename),
+        content,
+        content_type,
+    )
 
     uploaded_at = datetime.now(timezone.utc).isoformat()
     conn = get_connection()
@@ -55,6 +69,11 @@ def upload_source(
         conn.commit()
     finally:
         conn.close()
+
+    log_activity(
+        current_user["user_id"], "upload", "source", source_id,
+        f"Uploaded {file.filename}",
+    )
 
     return {
         "source_id": source_id,
@@ -101,12 +120,13 @@ def list_sources(current_user: dict = Depends(get_current_user)) -> dict:
     }
 
 
-def _dataset_ids_for_source(source_id: str) -> list:
-    """Canonical dataset ids whose source_ids JSON list contains source_id."""
+def _dataset_ids_for_source(source_id: str, user_id: str) -> list:
+    """Canonical dataset ids (owned by user) whose source list contains source_id."""
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT dataset_id, source_ids FROM canonical_datasets"
+            "SELECT dataset_id, source_ids FROM canonical_datasets WHERE user_id = ?",
+            (user_id,),
         ).fetchall()
     finally:
         conn.close()
@@ -147,41 +167,42 @@ def delete_source(source_id: str, current_user: dict = Depends(get_current_user)
     """Delete an uploaded source and everything derived from it.
 
     Ownership: only the source's owner may delete it; anyone else gets a
-    clean 404. Cascade: the raw uploaded file folder, this source's
+    clean 404. Cascade: the raw file in Supabase Storage, this source's
     profile/contract/quality report, and any canonical dataset built from
     this source (with the dataset's own cascade: KPIs, computations,
     anomalies, findings, insights, recommendation packages, LLM call ledger
-    rows, and the canonical CSV on disk). Idempotent: 200 even if some pieces
-    are already gone; 404 only when the source was never uploaded.
+    rows, and the canonical CSV in Storage). Idempotent: 200 even if some
+    pieces are already gone; 404 only when the source was never uploaded.
     """
+    user_id = current_user["user_id"]
     conn = get_connection()
     try:
         row = conn.execute(
             "SELECT source_id, filename FROM sources WHERE source_id = ? AND user_id = ?",
-            (source_id, current_user["user_id"]),
+            (source_id, user_id),
         ).fetchone()
         if row is None:
             raise not_found(f"Source {source_id}")
 
-        dataset_ids = _dataset_ids_for_source(source_id)
+        dataset_ids = _dataset_ids_for_source(source_id, user_id)
         for dataset_id in dataset_ids:
             _delete_dataset_rows(dataset_id, conn)
-            # Canonical CSV on disk.
-            csv_path = Path(settings.UPLOADS_DIR) / "canonical" / f"{dataset_id}.csv"
-            if csv_path.exists():
-                csv_path.unlink()
-
         for table in ("profiles", "semantic_contracts", "quality_reports", "sources"):
             conn.execute(f"DELETE FROM {table} WHERE source_id = ?", (source_id,))
         conn.commit()
     finally:
         conn.close()
 
-    # Raw uploaded file folder (after the DB commit — file cleanup is
-    # best-effort and idempotent).
-    uploads_dir = Path(settings.UPLOADS_DIR) / source_id
-    if uploads_dir.exists():
-        shutil.rmtree(uploads_dir, ignore_errors=True)
+    # Storage cleanup (after the DB commit — best-effort and idempotent).
+    try:
+        storage.delete_file(source_file_path(user_id, source_id, row["filename"]))
+    except Exception:
+        pass  # missing file is fine
+    for dataset_id in dataset_ids:
+        try:
+            storage.delete_file(canonical_file_path(user_id, dataset_id))
+        except Exception:
+            pass
 
     return {
         "deleted": True,

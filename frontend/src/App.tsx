@@ -17,6 +17,7 @@ import InsightsPage from './pages/InsightsPage'
 import RecommendationsPage from './pages/RecommendationsPage'
 import FeedbackPage from './pages/FeedbackPage'
 import TelemetryPage from './pages/TelemetryPage'
+import HistoryPage from './pages/HistoryPage'
 import DashboardPage from './pages/DashboardPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
@@ -24,7 +25,7 @@ import RegisterPage from './pages/RegisterPage'
 type BackendStatus = 'checking' | 'connected' | 'unreachable'
 type DbStatus = 'checking' | 'connected' | 'unreachable'
 type BootStage = 'server' | 'database' | 'ready' | 'db_failed'
-type PageName =
+export type PageName =
   | 'Upload'
   | 'Profile'
   | 'Semantic Contract'
@@ -37,6 +38,7 @@ type PageName =
   | 'Recommendations'
   | 'Feedback'
   | 'Telemetry'
+  | 'History'
   | 'Dashboard'
   | 'Login'
   | 'Register'
@@ -54,6 +56,7 @@ const NAV_ITEMS: { label: string; enabled: boolean; page?: PageName }[] = [
   { label: 'Recommendations', enabled: true, page: 'Recommendations' },
   { label: 'Feedback', enabled: true, page: 'Feedback' },
   { label: 'Telemetry', enabled: true, page: 'Telemetry' },
+  { label: 'History', enabled: true, page: 'History' },
   { label: 'Dashboard', enabled: true, page: 'Dashboard' },
 ]
 
@@ -338,6 +341,7 @@ function AppShell() {
           {page === 'Recommendations' && <RecommendationsPage />}
           {page === 'Feedback' && <FeedbackPage />}
           {page === 'Telemetry' && <TelemetryPage />}
+          {page === 'History' && <HistoryPage onNavigate={setPage} />}
           {page === 'Dashboard' && <DashboardPage />}
           {page === 'Login' && <LoginPage onDone={() => setPage('Dashboard')} />}
           {page === 'Register' && <RegisterPage onDone={() => setPage('Dashboard')} />}

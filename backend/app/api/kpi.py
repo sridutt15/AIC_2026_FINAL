@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.config import settings
 from app.api.integrations import apply_persona
+from app.core.activity.logger import log_activity
 from app.core.kpi_engine.computation import compute_kpi
 from app.core.kpi_engine.discovery import discover_kpis
 from app.core.kpi_engine.materiality import score_materiality
@@ -44,21 +45,25 @@ def _load_dataset_row(dataset_id: str, user_id: str | None = None) -> dict:
     return dataset
 
 
-def _load_canonical_df(dataset_id: str):
-    """Memory-safe canonical CSV load (see core.canonical.reconciler.load_canonical_csv).
+def _load_canonical_df(dataset_id: str, user_id: str | None = None):
+    """Memory-safe canonical CSV load from Supabase Storage (Phase 16).
 
     Oversized datasets return a 413 with a clear remediation message instead of
-    crashing the worker with MemoryError mid-request.
+    crashing the worker with MemoryError mid-request. The caller must have
+    verified dataset ownership before this Storage read.
     """
-    from app.core.canonical.reconciler import load_canonical_csv
-
-    path = settings.UPLOADS_DIR / "canonical" / f"{dataset_id}.csv"
-    if not path.exists():
+    if user_id is None:
         raise not_found(f"Canonical file for dataset {dataset_id}")
+    from app.api.canonical_model import load_canonical_df as _storage_load
+
     try:
-        return load_canonical_csv(path)
+        return _storage_load(user_id, dataset_id)
+    except not_found.__class__:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except Exception as exc:
+        raise not_found(f"Canonical file for dataset {dataset_id}") from exc
 
 
 def _load_contracts(source_ids: list, user_id: str | None = None) -> list:
@@ -138,7 +143,7 @@ def discover_for_dataset(dataset_id: str, current_user: dict = Depends(get_curre
     """Run discovery + validation; store KPIs; return them with statuses + materiality."""
     user_id = current_user["user_id"]
     dataset = _load_dataset_row(dataset_id, user_id)
-    canonical_df = _load_canonical_df(dataset_id)
+    canonical_df = _load_canonical_df(dataset_id, user_id)
     contracts = _load_contracts(dataset["source_ids"], user_id)
     if not contracts:
         raise HTTPException(
@@ -205,6 +210,10 @@ def discover_for_dataset(dataset_id: str, current_user: dict = Depends(get_curre
 
     # Sort by materiality descending so the most material movement comes first.
     discovered.sort(key=lambda k: k.get("materiality", 0.0), reverse=True)
+    log_activity(
+        user_id, "kpi_discovery", "dataset", dataset_id,
+        f"Discovered {len(discovered)} KPIs for dataset {dataset_id[:8]}",
+    )
     return {"dataset_id": dataset_id, "kpis": discovered}
 
 
@@ -275,7 +284,7 @@ def compute(kpi_id: str, current_user: dict = Depends(get_current_user)) -> dict
             "computation": json.loads(cached["computation_json"]),
         }
 
-    canonical_df = _load_canonical_df(definition["dataset_id"])
+    canonical_df = _load_canonical_df(definition["dataset_id"], user_id)
     computation = compute_kpi(definition, canonical_df)
 
     computed_at = datetime.now(timezone.utc).isoformat()

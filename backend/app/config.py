@@ -46,6 +46,11 @@ class Settings:
                 "`openssl rand -hex 32` and set it in backend/.env."
             )
         self.SECRET_KEY: str = secret_key
+        # Supabase Storage (Phase 16) — the service-role key is server-side
+        # only and must never reach the frontend.
+        self.SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+        self.SUPABASE_SERVICE_KEY: str = os.getenv("SUPABASE_SERVICE_KEY", "")
+        self.SUPABASE_STORAGE_BUCKET: str = os.getenv("SUPABASE_STORAGE_BUCKET", "uploads")
         self.ACCESS_TOKEN_EXPIRE_MINUTES: int = int(
             os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
         )

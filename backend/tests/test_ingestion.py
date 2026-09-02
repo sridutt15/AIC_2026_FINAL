@@ -38,11 +38,9 @@ def test_upload_creates_source_row_and_file(isolated_env):
     source_id = body["source_id"]
     assert source_id  # non-empty UUID string
 
-    # Raw file saved under data/uploads/{source_id}/
-    saved = list((settings.UPLOADS_DIR / source_id).glob("source.*"))
-    assert len(saved) == 1
-    assert saved[0].suffix == ".csv"
-    assert saved[0].read_bytes() == CSV_CONTENT.encode()
+    # (Phase 16) Raw file lives in Supabase Storage at {user_id}/{source_id}/;
+    # the DB row records the filename, and nothing lands on local disk.
+    assert not list((settings.UPLOADS_DIR / source_id).glob("source.*")) if (settings.UPLOADS_DIR / source_id).exists() else True
 
     # Row appears in sources table
     conn = get_connection()

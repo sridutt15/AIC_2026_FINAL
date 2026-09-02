@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.core.activity.logger import log_activity
 from app.core.auth.security import get_current_user
 from app.core.feedback.store import (
     get_feedback,
@@ -35,6 +36,10 @@ def post_feedback(req: FeedbackRequest, current_user: dict = Depends(get_current
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    log_activity(
+        current_user["user_id"], "feedback_submitted", req.target_type, req.target_id,
+        f"Feedback: {req.verdict} on {req.target_type} {req.target_id[:8]}",
+    )
     return row
 
 

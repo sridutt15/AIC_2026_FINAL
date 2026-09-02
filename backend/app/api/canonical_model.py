@@ -9,21 +9,17 @@ import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.config import settings
+from app.api.ingestion import canonical_file_path
+from app.api.profiling import load_source_dataframe
 from app.core.canonical.reconciler import align_grain, reconcile
-from app.core.ingestion.loaders import load_source
+from app.core.storage import supabase_client as storage
 from app.db import get_connection
 from app.core.auth.security import get_current_user
-from app.core.errors import not_found
+from app.core.errors import AppError, not_found
 
 router = APIRouter(prefix="/canonical", tags=["canonical"], dependencies=[Depends(get_current_user)])
 
 PREVIEW_ROWS = 20
-
-
-def _canonical_dir() -> Path:
-    """Canonical storage dir — resolved at call time (test-safe)."""
-    return Path(settings.UPLOADS_DIR) / "canonical"
 
 
 class BuildRequest(BaseModel):
@@ -48,16 +44,34 @@ def _load_source_row(source_id: str, user_id: str) -> dict:
     return dict(row)
 
 
-def _load_df(source_id: str) -> pd.DataFrame:
-    uploads_dir = Path(settings.UPLOADS_DIR) / source_id
-    files = sorted(uploads_dir.glob("source.*"))
-    if not files:
-        raise not_found(f"Raw file for source {source_id}")
-    ext = files[0].suffix.lower().lstrip(".")
+def _load_source_df(source: dict, user_id: str) -> pd.DataFrame:
+    """Load a source's raw dataframe from Storage (post-ownership-check)."""
+    return load_source_dataframe(source, user_id)
+
+
+def load_canonical_df(user_id: str, dataset_id: str) -> pd.DataFrame:
+    """Load a canonical dataset's CSV from Supabase Storage (memory-safe).
+
+    The caller MUST have already verified the dataset belongs to user_id.
+    A missing Storage object raises a clean not_found.
+    """
+    import tempfile
+
+    from app.core.canonical.reconciler import load_canonical_csv as _safe_load
+
     try:
-        return load_source(files[0], ext)
+        file_bytes = storage.download_file(canonical_file_path(user_id, dataset_id))
+    except HTTPException:
+        raise
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Failed to load source {source_id}: {exc}") from exc
+        raise not_found(f"Canonical file for dataset {dataset_id}") from exc
+    with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as tmp:
+        tmp.write(file_bytes)
+        tmp_name = Path(tmp.name)
+    try:
+        return _safe_load(tmp_name)
+    finally:
+        tmp_name.unlink(missing_ok=True)
 
 
 def _frame_to_records(df: pd.DataFrame) -> list:
@@ -79,21 +93,10 @@ def _frame_to_records(df: pd.DataFrame) -> list:
     return records
 
 
-def _load_canonical_csv(dataset_id: str) -> pd.DataFrame:
-    from app.core.canonical.reconciler import load_canonical_csv as _safe_load
-
-    path = _canonical_dir() / f"{dataset_id}.csv"
-    if not path.exists():
-        raise not_found(f"Canonical dataset {dataset_id}")
-    try:
-        return _safe_load(path)
-    except ValueError as exc:
-        raise HTTPException(status_code=413, detail=str(exc)) from exc
-
-
 @router.post("/build")
 def build_canonical(req: BuildRequest, current_user: dict = Depends(get_current_user)) -> dict:
     """Reconcile 2+ sources into a stored canonical dataset; return id + first 20 rows."""
+    user_id = current_user["user_id"]
     if len(req.source_ids) < 2:
         raise HTTPException(status_code=422, detail="Need at least two source_ids to reconcile.")
     if len(set(req.source_ids)) != len(req.source_ids):
@@ -101,8 +104,8 @@ def build_canonical(req: BuildRequest, current_user: dict = Depends(get_current_
 
     sources_meta = []
     for idx, source_id in enumerate(req.source_ids):
-        meta = _load_source_row(source_id, current_user["user_id"])
-        meta["df"] = _load_df(source_id)
+        meta = _load_source_row(source_id, user_id)  # ownership gate
+        meta["df"] = _load_source_df(meta, user_id)  # then Storage read
         meta["index"] = idx
         sources_meta.append(meta)
 
@@ -124,10 +127,13 @@ def build_canonical(req: BuildRequest, current_user: dict = Depends(get_current_
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     dataset_id = str(uuid.uuid4())
-    canonical_dir = _canonical_dir()
-    canonical_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = canonical_dir / f"{dataset_id}.csv"
-    canonical_df.to_csv(csv_path, index=False)
+    csv_bytes = canonical_df.to_csv(index=False).encode()
+    try:
+        storage.upload_file(
+            canonical_file_path(user_id, dataset_id), csv_bytes, "text/csv", compress=True
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
 
     created_at = datetime.now(timezone.utc).isoformat()
     join_config = {
@@ -142,7 +148,7 @@ def build_canonical(req: BuildRequest, current_user: dict = Depends(get_current_
             "VALUES (?, ?, ?, ?, ?)",
             (
                 dataset_id,
-                current_user["user_id"],
+                user_id,
                 json.dumps(req.source_ids),
                 json.dumps(join_config),
                 created_at,
@@ -165,19 +171,20 @@ def build_canonical(req: BuildRequest, current_user: dict = Depends(get_current_
 @router.get("/{dataset_id}/preview")
 def preview_canonical(dataset_id: str, page: int = 1, current_user: dict = Depends(get_current_user)) -> dict:
     """Paginated preview (20 rows/page) of a stored canonical dataset."""
+    user_id = current_user["user_id"]
     conn = get_connection()
     try:
         row = conn.execute(
             "SELECT dataset_id, source_ids, join_config_json, created_at "
             "FROM canonical_datasets WHERE dataset_id = ? AND user_id = ?",
-            (dataset_id, current_user["user_id"]),
+            (dataset_id, user_id),
         ).fetchone()
     finally:
         conn.close()
     if row is None:
         raise not_found(f"Canonical dataset {dataset_id}")
 
-    df = _load_canonical_csv(dataset_id)
+    df = load_canonical_df(user_id, dataset_id)  # ownership verified above
     page = max(1, page)
     start = (page - 1) * PREVIEW_ROWS
     end = start + PREVIEW_ROWS
@@ -203,16 +210,17 @@ def delete_canonical(dataset_id: str, current_user: dict = Depends(get_current_u
 
     Cascade (one DB transaction): the dataset row, its KPIs, and each KPI's
     computations, anomalies, findings, insights, recommendation packages,
-    and llm_calls ledger rows; then the canonical CSV on disk. The raw
-    uploaded sources are KEPT — they can build other datasets. 404 when the
-    dataset id is unknown.
+    and llm_calls ledger rows; then the canonical CSV in Supabase Storage.
+    The raw uploaded sources are KEPT — they can build other datasets. 404
+    when the dataset id is unknown (or owned by someone else).
     """
+    user_id = current_user["user_id"]
     conn = get_connection()
     try:
         row = conn.execute(
             "SELECT dataset_id FROM canonical_datasets "
             "WHERE dataset_id = ? AND user_id = ?",
-            (dataset_id, current_user["user_id"]),
+            (dataset_id, user_id),
         ).fetchone()
         if row is None:
             raise not_found(f"Canonical dataset {dataset_id}")
@@ -239,8 +247,9 @@ def delete_canonical(dataset_id: str, current_user: dict = Depends(get_current_u
     finally:
         conn.close()
 
-    csv_path = _canonical_dir() / f"{dataset_id}.csv"
-    if csv_path.exists():
-        csv_path.unlink()
+    try:
+        storage.delete_file(canonical_file_path(user_id, dataset_id))
+    except Exception:
+        pass  # best-effort
 
     return {"deleted": True, "dataset_id": dataset_id, "cascaded_kpis": kpi_ids}

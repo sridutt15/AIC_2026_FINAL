@@ -77,10 +77,8 @@ def test_delete_source_cascades_everything(isolated_env):
         assert before["findings"] > 0
         assert before["insights"] > 0
 
-        csv_path = Path(settings.UPLOADS_DIR) / "canonical" / f"{dataset_id}.csv"
-        upload_dir = Path(settings.UPLOADS_DIR) / target
-        assert csv_path.exists()
-        assert upload_dir.exists()
+        # (Phase 16) files lived in Storage; local disk stays empty throughout.
+        assert not (Path(settings.UPLOADS_DIR) / "canonical" / f"{dataset_id}.csv").exists()
 
         deleted = client.delete(f"/ingestion/sources/{target}")
         assert deleted.status_code == 200
@@ -96,9 +94,8 @@ def test_delete_source_cascades_everything(isolated_env):
         assert after["insights"] == 0
         assert after["kpi_computations"] == 0
 
-        # Disk cascade: raw upload folder and canonical CSV removed.
-        assert not csv_path.exists()
-        assert not upload_dir.exists()
+        # (Phase 16) files lived in Storage, not on disk; local stays empty.
+        assert not (Path(settings.UPLOADS_DIR) / "canonical" / f"{dataset_id}.csv").exists()
 
         # The source's profile/contract rows are gone too.
         conn = get_connection()
@@ -128,7 +125,6 @@ def test_delete_dataset_keeps_sources(isolated_env):
 
         before_sources = len(client.get("/ingestion/sources").json()["sources"])
         csv_path = Path(settings.UPLOADS_DIR) / "canonical" / f"{dataset_id}.csv"
-        assert csv_path.exists()
 
         deleted = client.delete(f"/canonical/{dataset_id}")
         assert deleted.status_code == 200

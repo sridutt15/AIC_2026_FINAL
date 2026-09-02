@@ -2,31 +2,16 @@
 
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.config import settings
-from app.core.ingestion.loaders import load_source
+from app.api.profiling import load_source_dataframe
 from app.core.quality.report_builder import build_quality_report
 from app.db import get_connection
 from app.core.auth.security import get_current_user
-from app.core.errors import not_found
+from app.core.errors import AppError, not_found
 
 router = APIRouter(prefix="/data-quality", tags=["data-quality"], dependencies=[Depends(get_current_user)])
-
-
-def _load_df(source_id: str):
-    """Load the raw dataframe for a source from its uploads folder."""
-    uploads_dir = Path(settings.UPLOADS_DIR) / source_id
-    files = sorted(uploads_dir.glob("source.*"))
-    if not files:
-        raise not_found(f"Raw file for source {source_id}")
-    ext = files[0].suffix.lower().lstrip(".")
-    try:
-        return load_source(files[0], ext)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Failed to load file: {exc}") from exc
 
 
 def _load_profile_json(source_id: str, user_id: str) -> dict | None:
@@ -62,11 +47,12 @@ def get_quality_report(source_id: str, current_user: dict = Depends(get_current_
             "report": json.loads(cached["report_json"]),
         }
 
-    # Prerequisites: source exists, profile exists, contract exists.
+    # Prerequisites: source exists (ownership gate) + profile + contract.
     conn = get_connection()
     try:
         source = conn.execute(
-            "SELECT source_id, filename FROM sources WHERE source_id = ? AND user_id = ?",
+            "SELECT source_id, filename, grain, cadence, uploaded_at FROM sources "
+            "WHERE source_id = ? AND user_id = ?",
             (source_id, user_id),
         ).fetchone()
         contract_row = conn.execute(
@@ -84,7 +70,14 @@ def get_quality_report(source_id: str, current_user: dict = Depends(get_current_
             detail=f"No semantic contract for source {source_id} — create one first.",
         )
 
-    df = _load_df(source_id)
+    # Ownership verified — safe to touch Supabase Storage now.
+    try:
+        df = load_source_dataframe(dict(source), user_id)
+    except (HTTPException, AppError):
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Failed to load file: {exc}") from exc
+
     contract = json.loads(contract_row["contract_json"])
     profile = _load_profile_json(source_id, user_id)
 

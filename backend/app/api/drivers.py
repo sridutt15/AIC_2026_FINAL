@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from app.api.integrations import apply_confidence, apply_persona
 from app.core.drivers.causal import diff_in_diff
 from app.core.drivers.contribution import decompose_contribution
+from app.core.activity.logger import log_activity
 from app.core.evidence.evidence_builder import build_evidence
 from app.core.telemetry.logger import timed_stage
 from app.db import get_connection
@@ -135,7 +136,7 @@ def get_drivers(kpi_id: str, refresh: bool = False, persona_id: str | None = Non
             if dim not in dimensions:
                 dimensions.append(dim)
 
-    canonical_df = _load_canonical_df(dataset_id)
+    canonical_df = _load_canonical_df(dataset_id, user_id)
     freshness = _source_freshness(dataset_id, user_id)
 
     try:
@@ -143,6 +144,13 @@ def get_drivers(kpi_id: str, refresh: bool = False, persona_id: str | None = Non
             canonical_df, {**kpi, "trend": computation.get("trend")}, dimensions
         )
     except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except AssertionError as exc:
+        # The Phase 6 waterfall reconciliation can legitimately fail on
+        # high-cardinality dimensions where per-slice movement doesn't sum
+        # to the total (e.g. customer_id with few repeat customers between
+        # periods). Surface the engine's own message as a clean 422 instead
+        # of letting the assert crash the route.
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     total_movement = decomposition["total_movement"]
@@ -214,6 +222,10 @@ def get_drivers(kpi_id: str, refresh: bool = False, persona_id: str | None = Non
         kpi_status=kpi.get("status"),
     )
 
+    log_activity(
+        user_id, "driver_analysis", "kpi", kpi_id,
+        f"Ran driver analysis for KPI {kpi.get('name', kpi_id)}",
+    )
     return apply_persona(
         {
             "kpi_id": kpi_id,
@@ -245,7 +257,7 @@ def run_diff_in_diff(kpi_id: str, req: DiDRequest, persona_id: str | None = None
     """Optional causal check when the user suspects a driver is confounded."""
     user_id = current_user["user_id"]
     kpi = _get_kpi(kpi_id, user_id)
-    canonical_df = _load_canonical_df(kpi["dataset_id"])
+    canonical_df = _load_canonical_df(kpi["dataset_id"], user_id)
     freshness = _source_freshness(kpi["dataset_id"], user_id)
 
     try:

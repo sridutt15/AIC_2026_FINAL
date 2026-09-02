@@ -26,6 +26,7 @@ from app.api import (
     telemetry,
     feedback,
     auth,
+    history,
 )
 from app.core.errors import AppError, database_unavailable, unexpected_error, validation_error
 from app.db import init_db
@@ -128,3 +129,4 @@ app.include_router(recommendations.router)
 app.include_router(telemetry.router)
 app.include_router(feedback.router)
 app.include_router(auth.router)
+app.include_router(history.router)

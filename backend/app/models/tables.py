@@ -218,3 +218,18 @@ class RefreshToken(Base):
     expires_at = Column(Text)
     revoked = Column(Integer, default=0)
     created_at = Column(Text)
+
+
+# --- Phase 17 activity log ---------------------------------------------------
+
+
+class ActivityLog(Base):
+    __tablename__ = "activity_log"
+
+    log_id = Column(Text, primary_key=True)
+    user_id = Column(Text)
+    action_type = Column(Text)
+    target_type = Column(Text)
+    target_id = Column(Text)
+    summary = Column(Text)
+    created_at = Column(Text)
