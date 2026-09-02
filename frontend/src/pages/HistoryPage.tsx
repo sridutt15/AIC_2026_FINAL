@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { fetchHistory, type ActivityRow } from '../api/history'
 import type { PageName } from '../App'
+import { PageHeader, staggerContainer } from '../components/ui'
+import { History } from 'lucide-react'
+import { motion } from 'framer-motion'
 
 const ACTION_ICONS: Record<string, string> = {
   upload: '⬆',
@@ -79,13 +82,12 @@ export default function HistoryPage({ onNavigate }: { onNavigate: (page: PageNam
   }, [load])
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="mb-6 flex items-end justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-gray-900">Activity history</h2>
-          <p className="text-sm text-gray-500">{total} actions logged</p>
-        </div>
-      </div>
+    <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-6">
+      <PageHeader
+        icon={<History size={20} />}
+        title="Activity history"
+        description={`${total} actions logged — everything you have done in the app, newest first.`}
+      />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <select
@@ -94,7 +96,7 @@ export default function HistoryPage({ onNavigate }: { onNavigate: (page: PageNam
             setActionType(e.target.value)
             setPage(1)
           }}
-          className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-700"
+          className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700"
         >
           {ACTION_TYPES.map((t) => (
             <option key={t || 'all'} value={t}>
@@ -102,7 +104,7 @@ export default function HistoryPage({ onNavigate }: { onNavigate: (page: PageNam
             </option>
           ))}
         </select>
-        <label className="flex items-center gap-1 text-sm text-gray-600">
+        <label className="flex items-center gap-1 text-sm text-slate-600">
           From
           <input
             type="date"
@@ -111,10 +113,10 @@ export default function HistoryPage({ onNavigate }: { onNavigate: (page: PageNam
               setSince(e.target.value)
               setPage(1)
             }}
-            className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+            className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
           />
         </label>
-        <label className="flex items-center gap-1 text-sm text-gray-600">
+        <label className="flex items-center gap-1 text-sm text-slate-600">
           To
           <input
             type="date"
@@ -123,20 +125,20 @@ export default function HistoryPage({ onNavigate }: { onNavigate: (page: PageNam
               setUntil(e.target.value)
               setPage(1)
             }}
-            className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+            className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
           />
         </label>
       </div>
 
       {error && <p className="mb-4 text-sm font-medium text-red-600">{error}</p>}
-      {loading && <p className="text-sm text-gray-500">Loading…</p>}
+      {loading && <p className="text-sm text-slate-500">Loading…</p>}
       {!loading && !error && rows.length === 0 && (
-        <p className="py-8 text-center text-sm text-gray-500">
+        <p className="py-8 text-center text-sm text-slate-500">
           No activity yet — upload a file or run an analysis to get started.
         </p>
       )}
 
-      <ul className="divide-y divide-gray-200 rounded-lg border border-gray-200 bg-white">
+      <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
         {rows.map((row) => {
           const dest = targetPage(row)
           return (
@@ -145,15 +147,15 @@ export default function HistoryPage({ onNavigate }: { onNavigate: (page: PageNam
                 onClick={() => dest && onNavigate(dest)}
                 disabled={!dest}
                 className={`flex w-full items-center gap-4 px-4 py-3 text-left ${
-                  dest ? 'hover:bg-gray-50' : 'cursor-default'
+                  dest ? 'hover:bg-slate-50' : 'cursor-default'
                 }`}
                 title={dest ? `Go to ${dest}` : undefined}
               >
                 <span className="w-6 text-center text-base" aria-hidden>
                   {ACTION_ICONS[row.action_type] ?? '•'}
                 </span>
-                <span className="flex-1 text-sm text-gray-800">{row.summary}</span>
-                <span className="whitespace-nowrap text-xs text-gray-400">
+                <span className="flex-1 text-sm text-slate-800">{row.summary}</span>
+                <span className="whitespace-nowrap text-xs text-slate-400">
                   {new Date(row.created_at).toLocaleString()}
                 </span>
               </button>
@@ -163,11 +165,11 @@ export default function HistoryPage({ onNavigate }: { onNavigate: (page: PageNam
       </ul>
 
       {totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+        <div className="mt-4 flex items-center justify-between text-sm text-slate-600">
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page <= 1}
-            className="rounded-md border border-gray-300 px-3 py-1 disabled:opacity-40"
+            className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40"
           >
             ← Newer
           </button>
@@ -177,12 +179,12 @@ export default function HistoryPage({ onNavigate }: { onNavigate: (page: PageNam
           <button
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page >= totalPages}
-            className="rounded-md border border-gray-300 px-3 py-1 disabled:opacity-40"
+            className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40"
           >
             Older →
           </button>
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }

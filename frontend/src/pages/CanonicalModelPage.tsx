@@ -4,6 +4,9 @@ import { buildCanonical, deleteCanonical, previewCanonical, renameCanonical } fr
 import { listDatasets } from '../api/kpi'
 import type { CanonicalDatasetInfo, DatasetListEntry, ProfileResult, SourceInfo } from '../types'
 import { getProfile } from '../api/profiling'
+import { PageHeader, staggerContainer } from '../components/ui'
+import { ListChecks } from 'lucide-react'
+import { motion } from 'framer-motion'
 
 const CADENCES = ['', 'Daily', 'Weekly', 'Monthly'] as const
 
@@ -168,22 +171,17 @@ export default function CanonicalModelPage() {
   const selectedOrder = selected
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-gray-800">Canonical model</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          Use a single source directly (no merge needed) or merge 2+ sources into one
-          canonical dataset with explicit, traceable reconciliation rules (downsample =
-          sum/mean; upsample = forward-fill LOCF).
-        </p>
+    <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-6">
+      <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+        <PageHeader icon={<ListChecks size={20} />} title="Canonical model" description="Use a single source directly or merge 2+ sources into one canonical dataset." />
         {sources.length === 1 && (
-          <p className="mt-2 rounded-md bg-indigo-50 px-3 py-2 text-sm text-indigo-700">
+          <p className="mt-2 rounded-md bg-accent-50 px-3 py-2 text-sm text-accent-700">
             You only have one data source — you can use it directly below, or upload
             another file first if you&apos;d like to combine multiple sources.
           </p>
         )}
 
-        <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
           1. Select sources
         </h3>
         <div className="mt-2 space-y-1">
@@ -193,11 +191,11 @@ export default function CanonicalModelPage() {
                 type="checkbox"
                 checked={selected.includes(s.source_id)}
                 onChange={() => toggleSource(s.source_id)}
-                className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                className="h-4 w-4 rounded border-slate-300 text-accent-600 focus:ring-accent-500"
               />
-              <span className="text-sm text-gray-700">
+              <span className="text-sm text-slate-700">
                 {s.filename}
-                <span className="ml-2 text-xs text-gray-400">
+                <span className="ml-2 text-xs text-slate-400">
                   {s.grain} · {s.cadence}
                 </span>
               </span>
@@ -206,18 +204,18 @@ export default function CanonicalModelPage() {
         </div>
 
         {singleSource ? (
-          <p className="mt-4 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500">
+          <p className="mt-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">
             One source selected — its data will be used directly, no merge and no join
             keys needed.
           </p>
         ) : (
           <>
-            <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
               2. Join key mapping (common key → per-source column)
             </h3>
             <button
               onClick={addJoinKey}
-              className="mt-2 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+              className="mt-2 rounded-md bg-accent-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-600"
             >
               + Add join key
             </button>
@@ -229,7 +227,7 @@ export default function CanonicalModelPage() {
               <input
                 value={commonKey}
                 onChange={(e) => renameJoinKey(commonKey, e.target.value)}
-                className="w-32 rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+                className="w-32 rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:border-accent-500 focus:outline-none"
                 placeholder="common key"
               />
               {selectedOrder.map((sourceId, i) => {
@@ -240,7 +238,7 @@ export default function CanonicalModelPage() {
                     key={sourceId}
                     value={mapping[String(i)] ?? ''}
                     onChange={(e) => setKeyColumn(commonKey, i, e.target.value)}
-                    className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+                    className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-accent-500 focus:outline-none"
                   >
                     <option value="">
                       ({sources.find((s) => s.source_id === sourceId)?.filename ?? `source ${i + 1}`} column)
@@ -266,11 +264,11 @@ export default function CanonicalModelPage() {
         {singleSource ? null : (
           <div className="mt-4 flex items-center gap-3">
             <div>
-              <label className="text-xs font-medium text-gray-600">Target cadence</label>
+              <label className="text-xs font-medium text-slate-600">Target cadence</label>
               <select
                 value={targetCadence}
                 onChange={(e) => setTargetCadence(e.target.value)}
-                className="mt-1 block rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+                className="mt-1 block rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-accent-500 focus:outline-none"
               >
                 {CADENCES.map((c) => (
                   <option key={c} value={c}>
@@ -287,7 +285,7 @@ export default function CanonicalModelPage() {
           className={`mt-5 rounded-md px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${
             singleSource
               ? 'bg-emerald-600 hover:bg-emerald-700'
-              : 'bg-indigo-600 hover:bg-indigo-700'
+              : 'bg-accent-500 hover:bg-accent-600'
           }`}
         >
           {building
@@ -300,16 +298,16 @@ export default function CanonicalModelPage() {
         {notice && <p className="mt-3 text-sm text-green-700">{notice}</p>}
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-gray-800">Saved canonical datasets</h2>
+      <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+        <h2 className="text-base font-semibold text-slate-800">Saved canonical datasets</h2>
         {datasets.length === 0 ? (
-          <p className="mt-3 text-sm text-gray-500">
+          <p className="mt-3 text-sm text-slate-500">
             No canonical datasets built yet — build one above.
           </p>
         ) : (
           <table className="mt-3 w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
+              <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                 <th className="py-2 pr-4">Dataset</th>
                 <th className="py-2 pr-4">Sources</th>
                 <th className="py-2 pr-4">Created (UTC)</th>
@@ -318,18 +316,18 @@ export default function CanonicalModelPage() {
             </thead>
             <tbody>
               {datasets.map((d) => (
-                <tr key={d.dataset_id} className="border-b border-gray-100">
-                  <td className="py-2 pr-4 text-sm font-medium text-gray-800">
+                <tr key={d.dataset_id} className="border-b border-slate-100">
+                  <td className="py-2 pr-4 text-sm font-medium text-slate-800">
                     {d.name || d.dataset_id.slice(0, 8) + '…'}
                   </td>
-                  <td className="py-2 pr-4 text-gray-600">{d.source_ids.length} source(s)</td>
-                  <td className="py-2 pr-4 text-gray-500">
+                  <td className="py-2 pr-4 text-slate-600">{d.source_ids.length} source(s)</td>
+                  <td className="py-2 pr-4 text-slate-500">
                     {d.created_at.replace('T', ' ').slice(0, 19)}
                   </td>
                   <td className="py-2 text-right">
                     <button
                       onClick={() => handleRenameDataset(d)}
-                      className="mr-2 rounded-md bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                      className="mr-2 rounded-md bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
                       title="Rename this dataset"
                     >
                       Rename
@@ -351,13 +349,13 @@ export default function CanonicalModelPage() {
       </div>
 
       {built && (
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-gray-800">
+              <h3 className="text-sm font-semibold text-slate-800">
                 {built.name || `Canonical dataset ${built.dataset_id.slice(0, 8)}…`}
               </h3>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-slate-500">
                 {built.row_count} rows × {built.column_count} columns
               </p>
             </div>
@@ -365,17 +363,17 @@ export default function CanonicalModelPage() {
               <button
                 onClick={() => loadPage((built.page ?? 1) - 1)}
                 disabled={(built.page ?? 1) <= 1}
-                className="rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-600 disabled:opacity-40"
+                className="rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-600 disabled:opacity-40"
               >
                 ←
               </button>
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-slate-500">
                 page {built.page ?? 1} / {built.total_pages ?? 1}
               </span>
               <button
                 onClick={() => loadPage((built.page ?? 1) + 1)}
                 disabled={(built.page ?? 1) >= (built.total_pages ?? 1)}
-                className="rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-600 disabled:opacity-40"
+                className="rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-600 disabled:opacity-40"
               >
                 →
               </button>
@@ -385,7 +383,7 @@ export default function CanonicalModelPage() {
           <div className="mt-3 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
+                <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                   {(built.columns ?? []).map((c) => (
                     <th key={c} className="whitespace-nowrap py-2 pr-4">
                       {c}
@@ -395,11 +393,11 @@ export default function CanonicalModelPage() {
               </thead>
               <tbody>
                 {(built.preview ?? []).map((row, i) => (
-                  <tr key={i} className="border-b border-gray-100">
+                  <tr key={i} className="border-b border-slate-100">
                     {(built.columns ?? []).map((c) => (
                       <td
                         key={c}
-                        className="whitespace-nowrap py-2 pr-4 text-gray-700"
+                        className="whitespace-nowrap py-2 pr-4 text-slate-700"
                       >
                         {formatCell(row[c])}
                       </td>
@@ -411,6 +409,6 @@ export default function CanonicalModelPage() {
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }

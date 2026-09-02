@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { listSources } from '../api/ingestion'
 import { getContract, saveContract } from '../api/semanticContract'
+import { PageHeader, staggerContainer } from '../components/ui'
+import { ScrollText } from 'lucide-react'
+import { motion } from 'framer-motion'
 import type {
   AggregationType,
   ContractResponse,
@@ -14,7 +17,7 @@ const AGGREGATIONS: AggregationType[] = ['sum', 'avg', 'rate', 'count']
 const GRANULARITIES = ['day', 'week', 'month'] as const
 
 const inputClass =
-  'mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none'
+  'mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700 focus:border-accent-500 focus:outline-none'
 
 function toggleInList(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
@@ -157,17 +160,14 @@ export default function SemanticContractPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-gray-800">Semantic contract</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          Review and correct the inferred KPI semantics before anything downstream is computed.
-        </p>
+    <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-6">
+      <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+        <PageHeader icon={<ScrollText size={20} />} title="Semantic contract" description="Lock the KPI definitions, hierarchies, thresholds, and access tags the engine will rely on." />
         <div className="mt-3 flex items-center gap-3">
           <select
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
-            className="block w-72 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
+            className="block w-72 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700 focus:border-accent-500 focus:outline-none"
           >
             <option value="" disabled>
               Select a source…
@@ -178,9 +178,9 @@ export default function SemanticContractPage() {
               </option>
             ))}
           </select>
-          {loading && <span className="text-sm text-gray-400">Loading…</span>}
+          {loading && <span className="text-sm text-slate-400">Loading…</span>}
           {meta && (
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-slate-400">
               {meta.built ? 'newly inferred' : 'stored version'} · updated{' '}
               {meta.updated_at.replace('T', ' ').slice(0, 19)} UTC
             </span>
@@ -191,19 +191,19 @@ export default function SemanticContractPage() {
 
       {contract && (
         <>
-          <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-800">KPI definitions</h3>
+              <h3 className="text-sm font-semibold text-slate-800">KPI definitions</h3>
               <button
                 onClick={addKpi}
-                className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+                className="rounded-md bg-accent-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-600"
               >
                 + Add custom KPI
               </button>
             </div>
 
             {contract.kpi_definitions.length === 0 ? (
-              <p className="mt-3 text-sm text-gray-500">
+              <p className="mt-3 text-sm text-slate-500">
                 No KPI definitions. Add one manually.
               </p>
             ) : (
@@ -211,10 +211,10 @@ export default function SemanticContractPage() {
                 {contract.kpi_definitions.map((kpi, idx) => (
                   <div
                     key={`${kpi.column}-${idx}`}
-                    className="grid grid-cols-1 items-start gap-3 rounded-md border border-gray-200 p-3 md:grid-cols-[1fr_1fr_2fr_auto]"
+                    className="grid grid-cols-1 items-start gap-3 rounded-md border border-slate-200 p-3 md:grid-cols-[1fr_1fr_2fr_auto]"
                   >
                     <div>
-                      <label className="text-xs font-medium text-gray-600">Measure column</label>
+                      <label className="text-xs font-medium text-slate-600">Measure column</label>
                       <select
                         value={kpi.column}
                         onChange={(e) => updateKpi(idx, { column: e.target.value })}
@@ -228,7 +228,7 @@ export default function SemanticContractPage() {
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-gray-600">Aggregation</label>
+                      <label className="text-xs font-medium text-slate-600">Aggregation</label>
                       <select
                         value={kpi.aggregation}
                         onChange={(e) =>
@@ -246,12 +246,12 @@ export default function SemanticContractPage() {
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-gray-600">
+                      <label className="text-xs font-medium text-slate-600">
                         Sliceable dimensions
                       </label>
                       <div className="mt-1 flex flex-wrap gap-2">
                         {dimensionColumns.length === 0 && (
-                          <span className="text-xs text-gray-400">No dimensions</span>
+                          <span className="text-xs text-slate-400">No dimensions</span>
                         )}
                         {dimensionColumns.map((dim) => {
                           const active = kpi.sliceable_by.includes(dim)
@@ -266,8 +266,8 @@ export default function SemanticContractPage() {
                               }
                               className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
                                 active
-                                  ? 'bg-indigo-100 text-indigo-700'
-                                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                  ? 'bg-indigo-100 text-accent-700'
+                                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                               }`}
                             >
                               {dim}
@@ -288,18 +288,18 @@ export default function SemanticContractPage() {
             )}
           </div>
 
-          <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-800">Hierarchies</h3>
+              <h3 className="text-sm font-semibold text-slate-800">Hierarchies</h3>
               <button
                 onClick={addHierarchy}
-                className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+                className="rounded-md bg-accent-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-600"
               >
                 + Add hierarchy
               </button>
             </div>
             {contract.hierarchies.length === 0 ? (
-              <p className="mt-3 text-sm text-gray-500">No hierarchies detected.</p>
+              <p className="mt-3 text-sm text-slate-500">No hierarchies detected.</p>
             ) : (
               <div className="mt-3 space-y-2">
                 {contract.hierarchies.map((h, idx) => (
@@ -310,7 +310,7 @@ export default function SemanticContractPage() {
                     <select
                       value={h.parent}
                       onChange={(e) => updateHierarchy(idx, { parent: e.target.value })}
-                      className="block w-56 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+                      className="block w-56 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-accent-500 focus:outline-none"
                     >
                       {dimensionColumns.map((c) => (
                         <option key={c} value={c}>
@@ -318,11 +318,11 @@ export default function SemanticContractPage() {
                         </option>
                       ))}
                     </select>
-                    <span className="text-sm text-gray-400">→</span>
+                    <span className="text-sm text-slate-400">→</span>
                     <select
                       value={h.child}
                       onChange={(e) => updateHierarchy(idx, { child: e.target.value })}
-                      className="block w-56 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+                      className="block w-56 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-accent-500 focus:outline-none"
                     >
                       {dimensionColumns.map((c) => (
                         <option key={c} value={c}>
@@ -343,11 +343,11 @@ export default function SemanticContractPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-            <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-800">Calendar</h3>
+            <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+              <h3 className="text-sm font-semibold text-slate-800">Calendar</h3>
               <div className="mt-3 grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-gray-600">Time column</label>
+                  <label className="text-xs font-medium text-slate-600">Time column</label>
                   <select
                     value={contract.calendar.time_column ?? ''}
                     onChange={(e) =>
@@ -374,7 +374,7 @@ export default function SemanticContractPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-600">Granularity</label>
+                  <label className="text-xs font-medium text-slate-600">Granularity</label>
                   <select
                     value={contract.calendar.granularity}
                     onChange={(e) =>
@@ -402,11 +402,11 @@ export default function SemanticContractPage() {
               </div>
             </div>
 
-            <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-800">Thresholds</h3>
+            <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+              <h3 className="text-sm font-semibold text-slate-800">Thresholds</h3>
               <div className="mt-3 grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-gray-600">
+                  <label className="text-xs font-medium text-slate-600">
                     Materiality (std devs)
                   </label>
                   <input
@@ -431,7 +431,7 @@ export default function SemanticContractPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-600">Min support rows</label>
+                  <label className="text-xs font-medium text-slate-600">Min support rows</label>
                   <input
                     type="number"
                     step="1"
@@ -461,7 +461,7 @@ export default function SemanticContractPage() {
             <button
               onClick={handleSave}
               disabled={saving}
-              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              className="rounded-md bg-accent-500 px-4 py-2 text-sm font-medium text-white hover:bg-accent-600 disabled:opacity-50"
             >
               {saving ? 'Saving…' : 'Save Contract'}
             </button>
@@ -469,6 +469,6 @@ export default function SemanticContractPage() {
           </div>
         </>
       )}
-    </div>
+    </motion.div>
   )
 }

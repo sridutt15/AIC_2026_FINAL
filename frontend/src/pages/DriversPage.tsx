@@ -16,6 +16,9 @@ import { getCachedBatch, invalidateBatch, runAndCacheBatch } from '../api/batchC
 import type { BatchDriverResult, DatasetListEntry, RunAllDriversResponse } from '../types'
 import EvidencePanel from '../components/EvidencePanel'
 import ConfidenceBadge, { AbstainCard } from '../components/ConfidenceBadge'
+import { PageHeader, staggerContainer } from '../components/ui'
+import { BarChart3 } from 'lucide-react'
+import { motion } from 'framer-motion'
 
 function isAbstained(f: BatchDriverResult['findings'][number]): boolean {
   return (f.finding as unknown as { abstained?: boolean }).abstained === true
@@ -113,20 +116,14 @@ export default function DriversPage() {
   }, [topFinding])
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-gray-800">Driver analysis</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          Click Discover Drivers to run the waterfall decomposition for every
-          computable KPI in the dataset in one operation — slice contributions
-          reconcile to the total, every finding carries traceable evidence.
-          Results are cached per dataset.
-        </p>
+    <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-6">
+      <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+        <PageHeader icon={<BarChart3 size={20} />} title="Driver analysis" description="Waterfall decomposition of the latest movement, batched across every KPI." />
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <select
             value={datasetId}
             onChange={(e) => setDatasetId(e.target.value)}
-            className="block w-56 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+            className="block w-56 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-accent-500 focus:outline-none"
           >
             <option value="" disabled>
               Dataset…
@@ -140,14 +137,14 @@ export default function DriversPage() {
           <button
             onClick={() => void handleDiscover()}
             disabled={loading || !datasetId}
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="rounded-md bg-accent-500 px-4 py-2 text-sm font-medium text-white hover:bg-accent-600 disabled:opacity-50"
           >
             {loading ? 'Discovering drivers…' : 'Discover Drivers'}
           </button>
           <button
             onClick={() => void handleDiscover(true)}
             disabled={loading || !datasetId}
-            className="rounded-md border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+            className="rounded-md border border-accent-300 bg-white px-3 py-2 text-sm font-medium text-accent-700 hover:bg-accent-50 disabled:opacity-50"
             title="Re-run driver decomposition for all KPIs"
           >
             Refresh
@@ -159,7 +156,7 @@ export default function DriversPage() {
                 setSelectedKpiId(e.target.value)
                 setSelectedFinding(null)
               }}
-              className="block max-w-md flex-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+              className="block max-w-md flex-1 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-accent-500 focus:outline-none"
             >
               <option value="" disabled>
                 KPI…
@@ -195,7 +192,7 @@ export default function DriversPage() {
       </div>
 
       {!loading && results.length === 0 && !error && (
-        <p className="rounded-lg border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+        <p className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
           Nothing cached yet — click Discover Drivers above. (KPIs must be
           discovered first on the KPIs page.)
         </p>
@@ -203,24 +200,24 @@ export default function DriversPage() {
 
       {selected && topFinding && (
         <>
-          <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-800">
                 {selected.definition.name} — movement by{' '}
-                <span className="text-indigo-600">{topFinding.finding.dimension}</span>
+                <span className="text-accent-600">{topFinding.finding.dimension}</span>
                 {topFinding.confidence && <ConfidenceBadge confidence={topFinding.confidence} />}
               </h3>
-              <div className="flex flex-wrap gap-3 text-xs text-gray-500">
+              <div className="flex flex-wrap gap-3 text-xs text-slate-500">
                 {selected.before && (
                   <span>
                     {selected.before.period.slice(0, 10)}:{' '}
-                    <b className="text-gray-800">{fmt(selected.before.value)}</b>
+                    <b className="text-slate-800">{fmt(selected.before.value)}</b>
                   </span>
                 )}
                 {selected.after && (
                   <span>
                     {selected.after.period.slice(0, 10)}:{' '}
-                    <b className="text-gray-800">{fmt(selected.after.value)}</b>
+                    <b className="text-slate-800">{fmt(selected.after.value)}</b>
                   </span>
                 )}
                 {selected.total_movement !== null && (
@@ -288,8 +285,8 @@ export default function DriversPage() {
                     onClick={() => setSelectedFinding(f)}
                     className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
                       f.finding.dimension === topFinding.finding.dimension
-                        ? 'bg-indigo-100 text-indigo-700'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        ? 'bg-indigo-100 text-accent-700'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }`}
                   >
                     {f.finding.dimension} — click for evidence
@@ -318,7 +315,7 @@ export default function DriversPage() {
 
       {selected && !topFinding && selected.findings.length > 0 && (
         <div className="space-y-3">
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-slate-500">
             All driver findings for this KPI abstained — evidence is too weak or
             contradictory to draw a conclusion.
           </p>
@@ -340,6 +337,6 @@ export default function DriversPage() {
           onClose={() => setSelectedFinding(null)}
         />
       )}
-    </div>
+    </motion.div>
   )
 }

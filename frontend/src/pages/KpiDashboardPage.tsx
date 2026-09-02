@@ -13,6 +13,9 @@ import {
 } from 'recharts'
 import { computeAllKpis, discoverKpis, listDatasets } from '../api/kpi'
 import { getCachedBatch, invalidateDataset, runAndCacheBatch } from '../api/batchCache'
+import { PageHeader, staggerContainer } from '../components/ui'
+import { Gauge } from 'lucide-react'
+import { motion } from 'framer-motion'
 import type {
   BatchKpiResult,
   ComputeAllResponse,
@@ -183,19 +186,14 @@ export default function KpiDashboardPage() {
   const computedCount = batch.filter((r) => r.computation !== null).length
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-gray-800">KPI dashboard</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          Discover KPIs from a canonical dataset's semantic contract, validate them, and
-          compute value / trend / baseline / benchmark / confidence interval — all in one
-          operation.
-        </p>
+    <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-6">
+      <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+        <PageHeader icon={<Gauge size={20} />} title="KPI dashboard" description="Discover KPIs and compute value, trend, baseline, benchmark, and confidence — all at once." />
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <select
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
-            className="block w-72 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
+            className="block w-72 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700 focus:border-accent-500 focus:outline-none"
           >
             <option value="" disabled>
               Select a canonical dataset…
@@ -209,7 +207,7 @@ export default function KpiDashboardPage() {
           <button
             onClick={() => void handleDiscover()}
             disabled={computingAll || !selected}
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="rounded-md bg-accent-500 px-4 py-2 text-sm font-medium text-white hover:bg-accent-600 disabled:opacity-50"
           >
             {discovering
               ? 'Discovering…'
@@ -220,13 +218,13 @@ export default function KpiDashboardPage() {
           <button
             onClick={() => void handleDiscover(true)}
             disabled={computingAll || !selected}
-            className="rounded-md border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+            className="rounded-md border border-accent-300 bg-white px-3 py-2 text-sm font-medium text-accent-700 hover:bg-accent-50 disabled:opacity-50"
             title="Re-run discovery and recompute everything"
           >
             Refresh
           </button>
           {computingAll && (
-            <span className="text-sm text-gray-400">
+            <span className="text-sm text-slate-400">
               {discovering
                 ? 'Discovering KPIs…'
                 : `Computing ${computedCount}/${batch.length || '…'} KPIs…`}
@@ -264,12 +262,12 @@ export default function KpiDashboardPage() {
             <button
               key={r.kpi_id}
               onClick={() => r.computation && setDetail(r)}
-              className={`rounded-lg border border-gray-200 bg-white p-4 text-left shadow-sm transition ${
-                r.computation ? 'hover:border-indigo-300 hover:shadow' : 'opacity-70'
+              className={`rounded-card bg-white p-4 text-left shadow-card transition ${
+                r.computation ? 'hover:border-accent-300 hover:shadow' : 'opacity-70'
               }`}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-sm font-semibold text-gray-800">
+                <span className="truncate text-sm font-semibold text-slate-800">
                   {r.definition.name}
                 </span>
                 <span
@@ -285,20 +283,20 @@ export default function KpiDashboardPage() {
               <div className="mt-2 flex items-center justify-between">
                 {r.definition.status === 'invalid' ? (
                   <span
-                    className="truncate text-xs text-gray-400"
+                    className="truncate text-xs text-slate-400"
                     title="This KPI cannot be computed from the data"
                   >
                     Not computable
                   </span>
                 ) : (
                   <span
-                    className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700"
+                    className="rounded-full bg-accent-50 px-2 py-0.5 text-xs font-medium text-accent-700"
                     title="Materiality score: statistical significance x business impact"
                   >
                     M {r.definition.materiality?.toFixed(1) ?? '0.0'}
                   </span>
                 )}
-                <span className="text-xs font-medium text-gray-700">
+                <span className="text-xs font-medium text-slate-700">
                   latest{' '}
                   {r.computation?.value !== null && r.computation
                     ? fmt(r.computation.value)
@@ -309,35 +307,35 @@ export default function KpiDashboardPage() {
                         : '…'}
                 </span>
               </div>
-              <p className="mt-1 line-clamp-2 text-xs text-gray-500">{r.definition.reason}</p>
+              <p className="mt-1 line-clamp-2 text-xs text-slate-500">{r.definition.reason}</p>
             </button>
           ))}
         </div>
       )}
 
       {detail && detail.computation && (
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
           <div className="flex items-start justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-gray-800">{detail.definition.name}</h3>
-              <div className="mt-1 flex flex-wrap gap-3 text-xs text-gray-500">
-                <span>latest: <b className="text-gray-800">{fmt(detail.computation.value)}</b></span>
-                <span>baseline: <b className="text-gray-800">{fmt(detail.computation.baseline)}</b></span>
-                <span>benchmark: <b className="text-gray-800">{fmt(detail.computation.benchmark)}</b></span>
+              <h3 className="text-sm font-semibold text-slate-800">{detail.definition.name}</h3>
+              <div className="mt-1 flex flex-wrap gap-3 text-xs text-slate-500">
+                <span>latest: <b className="text-slate-800">{fmt(detail.computation.value)}</b></span>
+                <span>baseline: <b className="text-slate-800">{fmt(detail.computation.baseline)}</b></span>
+                <span>benchmark: <b className="text-slate-800">{fmt(detail.computation.benchmark)}</b></span>
                 <span>
                   95% CI:{' '}
-                  <b className="text-gray-800">
+                  <b className="text-slate-800">
                     {detail.computation.confidence_interval
                       ? `${fmt(detail.computation.confidence_interval.lower)} – ${fmt(detail.computation.confidence_interval.upper)}`
                       : '—'}
                   </b>
                 </span>
-                <span>periods: <b className="text-gray-800">{detail.computation.period_count}</b></span>
+                <span>periods: <b className="text-slate-800">{detail.computation.period_count}</b></span>
               </div>
             </div>
             <button
               onClick={() => setDetail(null)}
-              className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+              className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
             >
               Close
             </button>
@@ -347,6 +345,6 @@ export default function KpiDashboardPage() {
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }

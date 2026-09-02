@@ -32,17 +32,17 @@ export function AbstainCard({
     <div className="rounded-lg border border-dashed border-red-300 bg-red-50 p-4">
       <div className="flex items-center gap-2">
         <ConfidenceBadge confidence={confidence} />
-        <span className="text-sm font-semibold text-gray-800">{title}</span>
+        <span className="text-sm font-semibold text-slate-800">{title}</span>
       </div>
-      <p className="mt-2 text-sm text-gray-700">
+      <p className="mt-2 text-sm text-slate-700">
         Insufficient or contradictory evidence — no conclusion is drawn.
       </p>
       {confidence.missing_evidence.length > 0 && (
         <div className="mt-2">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
             What&rsquo;s missing
           </p>
-          <ul className="mt-1 list-inside list-disc text-xs text-gray-700">
+          <ul className="mt-1 list-inside list-disc text-xs text-slate-700">
             {confidence.missing_evidence.map((m, i) => (
               <li key={i}>{m}</li>
             ))}

@@ -1,71 +1,68 @@
-import { useCallback, useEffect, useState } from 'react'
-import { deleteSource, listSources, uploadSource } from '../api/ingestion'
-import type { SourceInfo } from '../types'
+import { useState, type FormEvent } from 'react'
+import { motion } from 'framer-motion'
+import { FileSpreadsheet, FileUp, Info, UploadCloud } from 'lucide-react'
+import { uploadSource } from '../api/ingestion'
+import { Badge, Button, Card, EmptyState, PageHeader, SectionTitle, listItem, staggerContainer } from '../components/ui'
 
-const GRAIN_OPTIONS = ['Transactional', 'Daily', 'Weekly', 'Monthly', 'Custom']
-const CADENCE_OPTIONS = ['Real-time', 'Nightly batch', 'Weekly']
+const GRAINS = ['Daily', 'Weekly', 'Monthly', 'Real-time'] as const
+const CADENCES = ['Nightly batch', 'Hourly', 'Real-time stream', 'Manual'] as const
 
 export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null)
-  const [grain, setGrain] = useState<string>(GRAIN_OPTIONS[0])
-  const [cadence, setCadence] = useState<string>(CADENCE_OPTIONS[0])
-  const [sources, setSources] = useState<SourceInfo[]>([])
-  const [uploading, setUploading] = useState(false)
-  const [deleting, setDeleting] = useState<string | null>(null)
+  const [grain, setGrain] = useState('Daily')
+  const [cadence, setCadence] = useState('Nightly batch')
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
 
-  const refresh = useCallback(() => {
-    listSources()
-      .then(setSources)
-      .catch((err) => setError(String(err)))
-  }, [])
+  const [sources, setSources] = useState<
+    { source_id: string; filename: string; grain: string; cadence: string; uploaded_at: string; derived_dataset_count?: number }[]
+  >([])
+  const [loadingSources, setLoadingSources] = useState(true)
+  const [deleting, setDeleting] = useState<string | null>(null)
 
-  useEffect(() => {
-    refresh()
-  }, [refresh])
-
-  const handleUpload = async () => {
-    if (!file) {
-      setError('Choose a file first.')
-      return
-    }
-    setUploading(true)
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!file) return
+    setBusy(true)
     setError(null)
-    setNotice(null)
+    setSuccess(null)
     try {
-      await uploadSource(file, grain, cadence)
+      const resp = await uploadSource(file, grain, cadence)
+      setSuccess(`Uploaded “${resp.filename}” — source ${resp.source_id.slice(0, 8)}…`)
       setFile(null)
-      refresh()
+      loadSources()
     } catch (err) {
-      setError(String(err))
+      setError(err instanceof Error ? err.message : 'Upload failed')
     } finally {
-      setUploading(false)
+      setBusy(false)
     }
   }
 
-  const handleDelete = async (s: SourceInfo) => {
-    const datasetCount = s.derived_dataset_count
-    const confirmed = window.confirm(
-      `Delete "${s.filename}"?\n\n` +
-        `This also deletes its profile, contract, quality report, raw file` +
-        (datasetCount && datasetCount > 0
-          ? `, and ${datasetCount} canonical dataset(s) built from it (with all their KPIs, findings, insights, and recommendations)`
-          : '') +
-        `. This cannot be undone.`,
-    )
-    if (!confirmed) return
-    setDeleting(s.source_id)
-    setError(null)
-    setNotice(null)
+  async function loadSources() {
+    setLoadingSources(true)
     try {
-      const result = await deleteSource(s.source_id)
-      setNotice(
-        result.cascaded_datasets.length > 0
-          ? `Deleted "${s.filename}" and ${result.cascaded_datasets.length} dataset(s) built from it.`
-          : `Deleted "${s.filename}".`,
-      )
-      refresh()
+      const { listSources } = await import('../api/ingestion')
+      const list = await listSources()
+      setSources(list)
+    } catch {
+      setSources([])
+    } finally {
+      setLoadingSources(false)
+    }
+  }
+
+  async function handleDelete(sourceId: string) {
+    const src = sources.find((s) => s.source_id === sourceId)
+    const msg = src?.derived_dataset_count
+      ? `This source feeds ${src.derived_dataset_count} canonical dataset(s) — deleting it deletes those too. Continue?`
+      : 'Delete this source and everything derived from it?'
+    if (!window.confirm(msg)) return
+    setDeleting(sourceId)
+    try {
+      const { deleteSource } = await import('../api/ingestion')
+      await deleteSource(sourceId)
+      setSources((prev) => prev.filter((s) => s.source_id !== sourceId))
     } catch (err) {
       setError(String(err))
     } finally {
@@ -73,115 +70,178 @@ export default function UploadPage() {
     }
   }
 
-  return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-gray-800">Upload a data source</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          CSV, XLSX, or JSON. Column names are profiled automatically — nothing is hardcoded.
-        </p>
+  // Initial load
+  if (loadingSources && sources.length === 0 && !busy) {
+    import('../api/ingestion')
+      .then(({ listSources }) => listSources())
+      .then(setSources)
+      .catch(() => setSources([]))
+      .finally(() => setLoadingSources(false))
+  }
 
-        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div>
-            <label htmlFor="file" className="text-xs font-medium text-gray-600">
-              File
+  return (
+    <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-6">
+      <PageHeader
+        icon={<FileUp size={20} />}
+        title="Upload a data source"
+        description="Add a CSV, XLSX, or JSON file. The raw file is stored per user in Supabase Storage; everything downstream — profiles, contracts, KPIs — builds on this."
+      />
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+        <Card className="lg:col-span-3">
+          <SectionTitle>New source</SectionTitle>
+          <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+            <label className="group flex cursor-pointer flex-col items-center justify-center gap-3 rounded-card border-2 border-dashed border-slate-200 bg-slate-50/60 px-6 py-10 text-center transition hover:border-accent-300 hover:bg-accent-50/40">
+              <motion.span
+                whileHover={{ scale: 1.06 }}
+                className="rounded-2xl bg-accent-50 p-3.5 text-accent-500"
+              >
+                <UploadCloud size={26} />
+              </motion.span>
+              {file ? (
+                <span className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                  <FileSpreadsheet size={16} className="text-accent-500" />
+                  {file.name}
+                </span>
+              ) : (
+                <span className="text-sm font-medium text-slate-500">
+                  Drop a file here or <span className="text-accent-600">browse</span>
+                </span>
+              )}
+              <span className="text-xs text-slate-400">CSV · XLSX · JSON</span>
+              <input
+                type="file"
+                accept=".csv,.xlsx,.xls,.json"
+                className="hidden"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
             </label>
-            <input
-              id="file"
-              type="file"
-              accept=".csv,.xlsx,.xls,.json"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              className="mt-1 block w-full text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100"
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="text-xs font-semibold text-slate-500">Grain</label>
+                <select value={grain} onChange={(e) => setGrain(e.target.value)} className="input-base mt-1.5">
+                  {GRAINS.map((g) => (
+                    <option key={g}>{g}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500">Cadence</label>
+                <select value={cadence} onChange={(e) => setCadence(e.target.value)} className="input-base mt-1.5">
+                  {CADENCES.map((c) => (
+                    <option key={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <Button type="submit" disabled={!file || busy} className="w-full">
+              {busy ? 'Uploading…' : 'Upload source'}
+            </Button>
+          </form>
+          {error && <p className="mt-3 text-sm font-medium text-error-solid">{error}</p>}
+          {success && (
+            <p className="mt-3 flex items-center gap-1.5 text-sm font-medium text-success-text">
+              <Info size={14} /> {success}
+            </p>
+          )}
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <SectionTitle>How it works</SectionTitle>
+          <ol className="mt-4 space-y-3 text-sm text-slate-600">
+            {[
+              'Upload a raw file — it is stored privately, per user, in cloud storage.',
+              'Profile it to understand columns, types, and quality.',
+              'Lock the semantic contract — the KPI definitions follow.',
+              'Build a canonical dataset (single source works too) and discover KPIs.',
+            ].map((step, i) => (
+              <motion.li key={i} variants={listItem} className="flex gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-100 text-xs font-bold text-accent-700">
+                  {i + 1}
+                </span>
+                <span className="leading-relaxed">{step}</span>
+              </motion.li>
+            ))}
+          </ol>
+        </Card>
+      </div>
+
+      <Card>
+        <div className="flex items-center justify-between">
+          <SectionTitle>Uploaded sources</SectionTitle>
+          <Badge tone="neutral">{sources.length} total</Badge>
+        </div>
+        {loadingSources ? (
+          <div className="mt-4 space-y-2">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="skeleton h-14" />
+            ))}
+          </div>
+        ) : sources.length === 0 ? (
+          <div className="mt-4">
+            <EmptyState
+              icon={<FileUp size={28} />}
+              title="No sources yet"
+              hint="Upload your first file above — a single source can power the entire pipeline."
             />
           </div>
-          <div>
-            <label htmlFor="grain" className="text-xs font-medium text-gray-600">
-              Grain
-            </label>
-            <select
-              id="grain"
-              value={grain}
-              onChange={(e) => setGrain(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
-            >
-              {GRAIN_OPTIONS.map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label htmlFor="cadence" className="text-xs font-medium text-gray-600">
-              Refresh cadence
-            </label>
-            <select
-              id="cadence"
-              value={cadence}
-              onChange={(e) => setCadence(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
-            >
-              {CADENCE_OPTIONS.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <button
-          onClick={handleUpload}
-          disabled={uploading}
-          className="mt-4 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {uploading ? 'Uploading…' : 'Upload'}
-        </button>
-
-        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
-        {notice && <p className="mt-3 text-sm text-green-700">{notice}</p>}
-      </div>
-
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-gray-800">Uploaded sources</h2>
-        {sources.length === 0 ? (
-          <p className="mt-3 text-sm text-gray-500">No sources uploaded yet.</p>
         ) : (
-          <table className="mt-3 w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
-                <th className="py-2 pr-4">Filename</th>
-                <th className="py-2 pr-4">Grain</th>
-                <th className="py-2 pr-4">Cadence</th>
-                <th className="py-2 pr-4">Uploaded (UTC)</th>
-                <th className="py-2 text-right"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {sources.map((s) => (
-                <tr key={s.source_id} className="border-b border-gray-100">
-                  <td className="py-2 pr-4 font-medium text-gray-800">{s.filename}</td>
-                  <td className="py-2 pr-4 text-gray-600">{s.grain}</td>
-                  <td className="py-2 pr-4 text-gray-600">{s.cadence}</td>
-                  <td className="py-2 pr-4 text-gray-500">
-                    {s.uploaded_at.replace('T', ' ').slice(0, 19)}
-                  </td>
-                  <td className="py-2 text-right">
-                    <button
-                      onClick={() => handleDelete(s)}
-                      disabled={deleting === s.source_id}
-                      className="rounded-md bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-100 disabled:opacity-50"
-                      title="Delete this source and everything derived from it"
-                    >
-                      {deleting === s.source_id ? 'Deleting…' : 'Delete'}
-                    </button>
-                  </td>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  <th className="py-2.5 pr-4">File</th>
+                  <th className="py-2.5 pr-4">Grain</th>
+                  <th className="py-2.5 pr-4">Cadence</th>
+                  <th className="py-2.5 pr-4">Uploaded</th>
+                  <th className="py-2.5 pr-4">Datasets</th>
+                  <th className="py-2.5 text-right"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {sources.map((s, i) => (
+                  <motion.tr
+                    key={s.source_id}
+                    variants={listItem}
+                    className={`table-hover-row ${i < sources.length - 1 ? 'border-b border-slate-50' : ''}`}
+                  >
+                    <td className="py-3 pr-4">
+                      <span className="flex items-center gap-2 font-semibold text-slate-800">
+                        <FileSpreadsheet size={15} className="shrink-0 text-accent-400" />
+                        {s.filename}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-4">
+                      <Badge tone="info">{s.grain}</Badge>
+                    </td>
+                    <td className="py-3 pr-4">
+                      <Badge tone="neutral">{s.cadence}</Badge>
+                    </td>
+                    <td className="py-3 pr-4 text-xs text-slate-400">
+                      {new Date(s.uploaded_at).toLocaleDateString()}
+                    </td>
+                    <td className="py-3 pr-4 text-xs text-slate-500">
+                      {s.derived_dataset_count ?? 0}
+                    </td>
+                    <td className="py-3 text-right">
+                      <Button
+                        variant="danger"
+                        onClick={() => handleDelete(s.source_id)}
+                        disabled={deleting === s.source_id}
+                        className="!min-h-[36px] !px-3 !py-1.5 !text-xs"
+                      >
+                        {deleting === s.source_id ? 'Deleting…' : 'Delete'}
+                      </Button>
+                    </td>
+                  </motion.tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </div>
-    </div>
+      </Card>
+    </motion.div>
   )
 }

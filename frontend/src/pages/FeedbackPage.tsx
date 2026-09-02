@@ -3,6 +3,9 @@ import { listRecentFeedback, submitFeedback } from '../api/feedback'
 import { listDatasets, listKpis } from '../api/kpi'
 import { getInsight } from '../api/insights'
 import type { FeedbackRow } from '../types'
+import { PageHeader, staggerContainer } from '../components/ui'
+import { MessageSquareQuote } from 'lucide-react'
+import { motion } from 'framer-motion'
 
 type Verdict = 'confirm' | 'correct' | 'reject'
 
@@ -85,25 +88,20 @@ export default function FeedbackPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-gray-800">Feedback loop</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          Leave verdicts on insights and recommendations. Repeated "reject"
-          verdicts on a driver type deterministically lower its weight in
-          future materiality scoring — no LLM involved.
-        </p>
+    <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-6">
+      <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+        <PageHeader icon={<MessageSquareQuote size={20} />} title="Feedback" description="Record verdicts on insights and recommendations — feedback tunes driver weights." />
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
         {message && <p className="mt-3 text-sm text-green-700">{message}</p>}
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h3 className="text-sm font-semibold text-gray-800">Rate the current insight</h3>
+      <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+        <h3 className="text-sm font-semibold text-slate-800">Rate the current insight</h3>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <select
             value={datasetId}
             onChange={(e) => setDatasetId(e.target.value)}
-            className="block w-56 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+            className="block w-56 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-accent-500 focus:outline-none"
           >
             <option value="" disabled>
               Dataset…
@@ -117,7 +115,7 @@ export default function FeedbackPage() {
           <select
             value={kpiId}
             onChange={(e) => setKpiId(e.target.value)}
-            className="block max-w-md flex-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+            className="block max-w-md flex-1 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-accent-500 focus:outline-none"
           >
             <option value="" disabled>
               KPI…
@@ -132,7 +130,7 @@ export default function FeedbackPage() {
 
         {currentInsight ? (
           <div className="mt-4 space-y-3">
-            <p className="rounded-md bg-gray-50 p-4 text-sm leading-relaxed text-gray-800">
+            <p className="rounded-md bg-slate-50 p-4 text-sm leading-relaxed text-slate-800">
               {currentInsight.text}
             </p>
             <input
@@ -140,7 +138,7 @@ export default function FeedbackPage() {
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="Optional note for the record…"
-              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+              className="block w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none"
             />
             <div className="flex flex-wrap gap-2">
               {(['confirm', 'correct', 'reject'] as Verdict[]).map((v) => (
@@ -156,17 +154,17 @@ export default function FeedbackPage() {
             </div>
           </div>
         ) : (
-          <p className="mt-4 text-sm text-gray-400">
+          <p className="mt-4 text-sm text-slate-400">
             No insight available for this KPI — compute the KPI and run drivers
             first, or pick another KPI.
           </p>
         )}
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h3 className="text-sm font-semibold text-gray-800">Recent feedback</h3>
+      <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+        <h3 className="text-sm font-semibold text-slate-800">Recent feedback</h3>
         {rows.length === 0 ? (
-          <p className="mt-2 text-sm text-gray-400">No feedback recorded yet.</p>
+          <p className="mt-2 text-sm text-slate-400">No feedback recorded yet.</p>
         ) : (
           <ul className="mt-3 divide-y divide-gray-100">
             {rows.map((r) => (
@@ -182,12 +180,12 @@ export default function FeedbackPage() {
                 >
                   {r.verdict}
                 </span>
-                <span className="text-xs text-gray-500">{r.target_type}</span>
-                <span className="max-w-xs truncate font-mono text-xs text-gray-400">
+                <span className="text-xs text-slate-500">{r.target_type}</span>
+                <span className="max-w-xs truncate font-mono text-xs text-slate-400">
                   {r.target_id}
                 </span>
-                {r.note && <span className="text-sm text-gray-700">"{r.note}"</span>}
-                <span className="ml-auto text-xs text-gray-400">
+                {r.note && <span className="text-sm text-slate-700">"{r.note}"</span>}
+                <span className="ml-auto text-xs text-slate-400">
                   {r.created_at.slice(0, 19).replace('T', ' ')}
                 </span>
               </li>
@@ -195,6 +193,6 @@ export default function FeedbackPage() {
           </ul>
         )}
       </div>
-    </div>
+    </motion.div>
   )
 }

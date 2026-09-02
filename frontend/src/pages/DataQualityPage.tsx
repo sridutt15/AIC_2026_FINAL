@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { listSources } from '../api/ingestion'
 import { getQualityReport } from '../api/dataQuality'
 import type { QualityResponse, SourceInfo } from '../types'
+import { PageHeader, staggerContainer } from '../components/ui'
+import { ShieldCheck } from 'lucide-react'
+import { motion } from 'framer-motion'
 
 const SEVERITY_ORDER = { high: 0, medium: 1, low: 2 } as const
 
@@ -26,8 +29,8 @@ function ScoreBadge({ score }: { score: number }) {
         <span className="text-[10px] uppercase tracking-wide">/ 100</span>
       </div>
       <div>
-        <div className="text-lg font-semibold text-gray-800">{label} quality</div>
-        <div className="text-xs text-gray-500">
+        <div className="text-lg font-semibold text-slate-800">{label} quality</div>
+        <div className="text-xs text-slate-500">
           green ≥80 · yellow 50–79 · red &lt;50
         </div>
       </div>
@@ -69,18 +72,14 @@ export default function DataQualityPage() {
   }, [result])
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-gray-800">Data quality</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          Deterministic checks: missing values, duplicates, invalid ranges, type violations,
-          outliers (IQR).
-        </p>
+    <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-6">
+      <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+        <PageHeader icon={<ShieldCheck size={20} />} title="Data quality" description="A deterministic quality report per source: completeness, validity, consistency, and freshness." />
         <div className="mt-3 flex items-center gap-3">
           <select
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
-            className="block w-72 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
+            className="block w-72 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700 focus:border-accent-500 focus:outline-none"
           >
             <option value="" disabled>
               Select a source…
@@ -91,9 +90,9 @@ export default function DataQualityPage() {
               </option>
             ))}
           </select>
-          {loading && <span className="text-sm text-gray-400">Running checks…</span>}
+          {loading && <span className="text-sm text-slate-400">Running checks…</span>}
           {result && (
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-slate-400">
               {result.cached ? 'cached result' : 'freshly computed'} ·{' '}
               {result.report.row_count} rows × {result.report.column_count} cols
             </span>
@@ -104,13 +103,13 @@ export default function DataQualityPage() {
 
       {result && (
         <>
-          <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-            <h3 className="mb-4 text-sm font-semibold text-gray-800">Overall quality score</h3>
+          <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+            <h3 className="mb-4 text-sm font-semibold text-slate-800">Overall quality score</h3>
             <ScoreBadge score={result.report.score} />
           </div>
 
-          <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-            <h3 className="text-sm font-semibold text-gray-800">
+          <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+            <h3 className="text-sm font-semibold text-slate-800">
               Issues ({sortedIssues.length}) — sorted by severity
             </h3>
             {sortedIssues.length === 0 ? (
@@ -121,7 +120,7 @@ export default function DataQualityPage() {
               <div className="mt-3 overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
+                    <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                       <th className="py-2 pr-4">Severity</th>
                       <th className="py-2 pr-4">Column</th>
                       <th className="py-2 pr-4">Issue type</th>
@@ -132,7 +131,7 @@ export default function DataQualityPage() {
                     {sortedIssues.map((issue, idx) => (
                       <tr
                         key={`${issue.column}-${issue.issue_type}-${idx}`}
-                        className="border-b border-gray-100"
+                        className="border-b border-slate-100"
                       >
                         <td className="py-2 pr-4">
                           <span
@@ -141,9 +140,9 @@ export default function DataQualityPage() {
                             {issue.severity}
                           </span>
                         </td>
-                        <td className="py-2 pr-4 font-medium text-gray-800">{issue.column}</td>
-                        <td className="py-2 pr-4 text-gray-600">{issue.issue_type}</td>
-                        <td className="py-2 text-gray-600">{issue.affected_row_count}</td>
+                        <td className="py-2 pr-4 font-medium text-slate-800">{issue.column}</td>
+                        <td className="py-2 pr-4 text-slate-600">{issue.issue_type}</td>
+                        <td className="py-2 text-slate-600">{issue.affected_row_count}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -153,6 +152,6 @@ export default function DataQualityPage() {
           </div>
         </>
       )}
-    </div>
+    </motion.div>
   )
 }

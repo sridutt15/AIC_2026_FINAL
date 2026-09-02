@@ -10,10 +10,11 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?logo=fastapi&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=111111)
 ![TypeScript](https://img.shields.io/badge/TypeScript-Frontend-3178C6?logo=typescript&logoColor=white)
-![SQLite](https://img.shields.io/badge/SQLite-Storage-003B57?logo=sqlite&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-3ECF8E?logo=supabase&logoColor=white)
+![JWT](https://img.shields.io/badge/Auth-JWT-000000?logo=jsonwebtokens&logoColor=white)
 ![Claude](https://img.shields.io/badge/LLM-Final%20Stage%20Only-6F42C1)
 
-**Accenture Innovation Challenge 2026 · Round 2 · BusinessIntelligence.ai**  
+**Accenture Innovation Challenge 2026 · Round 2 · BusinessIntelligence.ai**
 **Team CreativeChaos · IIT Patna**
 
 </div>
@@ -30,18 +31,23 @@ Enterprise dashboards are good at showing **what changed**. The harder questions
 - **How confident should we be?**
 - **What should this specific decision-maker do next?**
 
-**RootLens AI** is a governed KPI Intelligence-to-Action Engine that turns heterogeneous enterprise data into trustworthy, persona-specific recommendations.
+**RootLens AI** is a governed KPI Intelligence-to-Action Engine that turns heterogeneous enterprise
+data into trustworthy, evidence-backed recommendations, with every user's data kept fully private to
+their own account.
 
 Its central design rule is simple:
 
-> **Every KPI, trend, anomaly, driver and confidence score is produced by deterministic logic, statistics or traditional ML. The LLM never sees raw data; it receives only a pre-verified evidence package and phrases the final recommendation.**
+> **Every KPI, trend, anomaly, driver and confidence score is produced by deterministic logic,
+> statistics or traditional ML. The LLM never sees raw data; it receives only a pre-verified
+> evidence package and phrases the final recommendation.**
 
 ```text
+IDENTITY      → real accounts, per-user data isolation
 TRUTH         → deterministic analytics
 EVIDENCE      → traceable support and context
 CONFIDENCE    → explain, caveat, or abstain
 COMMUNICATION → one final LLM step
-ACTION        → persona-specific recommendation
+ACTION        → concise, bulleted recommendation
 ```
 
 ---
@@ -51,12 +57,13 @@ ACTION        → persona-specific recommendation
 | Enterprise challenge | RootLens capability | Business outcome |
 |---|---|---|
 | Fragmented data and inconsistent KPI definitions | Governed ingestion, profiling, semantic contract and canonical model | Consistent KPI truth |
+| Data can arrive as a single file or from multiple systems | Canonical model works identically for one source or a multi-source merge | No dead end for smaller datasets |
 | Too many KPI alerts | Materiality + anomaly detection | Focus on movements that matter |
 | Slow root-cause investigation | Driver decomposition and ranked contribution analysis | Faster diagnosis |
 | Generic AI explanations | Evidence ledger + confidence scoring | Traceable, reviewable reasoning |
 | Hallucination risk | Deterministic quantitative pipeline | LLM cannot create numerical truth |
 | Weak or contradictory evidence | Confidence gate + abstention | System can refuse to guess |
-| Different stakeholder needs | Persona-aware output + scoped access | Same truth, different decisions |
+| Multiple users, one deployment | Real authentication + per-user data isolation | No user ever sees another user's data |
 | Unclear GenAI economics | Runtime telemetry | Visible latency, calls and cost |
 
 ---
@@ -70,7 +77,7 @@ ACTION        → persona-specific recommendation
 | **Determinism = reproducibility** | Same input + same configuration → same analytical output |
 | **Every insight is traceable** | Findings carry method, evidence, confidence and lineage |
 | **Uncertainty is explicit** | Low-confidence cases can caveat or abstain instead of forcing an answer |
-| **Security is applied before communication** | Persona scope is enforced before sensitive data reaches downstream stages |
+| **Isolation is enforced, not assumed** | Every table and every stored file is scoped to the authenticated user, checked on every request |
 
 ---
 
@@ -78,24 +85,23 @@ ACTION        → persona-specific recommendation
 
 ```mermaid
 flowchart LR
-    A["Layer A\nIngestion &\nReconciliation"] --> B["Layer B\nKPI Discovery &\nComputation"]
+    ID["Identity &\nAccess"] --> A["Layer A\nIngestion &\nReconciliation"] --> B["Layer B\nKPI Discovery &\nComputation"]
     B --> C["Layer C\nAnomaly, Driver\n& Evidence"]
-    C --> D["Layer D\nPersonalization &\nGovernance"]
+    C --> D["Layer D\nInsight\nGeneration"]
     D --> E["Layer E\nLLM Recommendation\nONLY LLM STEP"]
-    E --> F["Layer F\nFeedback, Telemetry\n& UI"]
+    E --> F["Layer F\nFeedback, Telemetry\n& Activity History"]
     F -. corrections & drift signals .-> A
-
-    style E fill:#ffe0b3,stroke:#cc7a00,stroke-width:2px
 ```
 
 | Layer | Purpose | Main backend modules |
 |---|---|---|
-| **A — Ingestion & Reconciliation** | Unify multi-source data into one governed analytical model | `ingestion/`, `profiling/`, `semantic/`, `quality/`, `canonical/` |
+| **Identity & Access** | Register/login, JWT sessions, per-user data and file isolation | `auth/` |
+| **A — Ingestion & Reconciliation** | Unify one or more sources into a governed analytical model | `ingestion/`, `profiling/`, `semantic/`, `quality/`, `canonical/`, `storage/` |
 | **B — KPI Discovery & Computation** | Discover, validate, compute and prioritize KPIs | `kpi_engine/` |
 | **C — Anomaly, Driver & Evidence** | Detect what moved, explain why, attach evidence and score confidence | `anomaly/`, `drivers/`, `evidence/`, `confidence/` |
-| **D — Personalization & Governance** | Apply persona/access rules and deterministic insight structure | `persona/`, `insight_templates/`, `recommendation/` |
-| **E — LLM Recommendation** | Convert verified evidence into persona-appropriate recommendation language | `llm/` |
-| **F — Feedback, Telemetry & UI** | Capture corrections, observe runtime behavior and present decisions | `feedback/`, `telemetry/` |
+| **D — Insight Generation** | Deterministic, bulleted insight structure from verified findings | `insight_templates/`, `recommendation/` |
+| **E — LLM Recommendation** | Convert verified evidence into a concise, bulleted recommendation | `llm/` |
+| **F — Feedback, Telemetry & Activity History** | Capture corrections, observe runtime behavior, log what each user did | `feedback/`, `telemetry/`, `activity/` |
 
 ---
 
@@ -104,7 +110,9 @@ flowchart LR
 The prototype is designed around one judge-friendly action: **Run Test**.
 
 ```text
-Select data / KPI / persona / scope
+Register / log in
+              ↓
+    Select data / KPI / scope
               ↓
            RUN TEST
               ↓
@@ -125,12 +133,13 @@ Select data / KPI / persona / scope
                            ↓
                     Final LLM phrasing
                            ↓
-                 Persona-specific action
+                  Bulleted recommendation
                            ↓
                         Telemetry
 ```
 
-A strong test run should make the reasoning inspectable rather than merely display a generated paragraph.
+A strong test run should make the reasoning inspectable rather than merely display a generated
+paragraph.
 
 ### What the user should be able to inspect
 
@@ -140,17 +149,24 @@ A strong test run should make the reasoning inspectable rather than merely displ
 - contribution or analytical method used
 - supporting evidence and lineage
 - confidence level and caveats
-- persona-specific recommendation
-- owner / next action / monitoring plan
+- bulleted recommendation with owner / next action / monitoring plan
+- their own activity history
 - runtime telemetry
 
 ---
 
 ## Analytical Pipeline
 
+### 0. Identity & Access
+
+Every user registers their own account. Passwords are bcrypt-hashed, sessions are JWT-based, and
+every table and every uploaded file is scoped to the authenticated user — verified with automated
+isolation tests, not just assumed by convention. There is no shared or global view of anyone's data.
+
 ### 1. Ingestion & Profiling
 
-RootLens accepts heterogeneous enterprise inputs and profiles them before analysis.
+RootLens accepts heterogeneous enterprise inputs and profiles them before analysis. Uploaded files
+are stored in a private, per-user folder in Supabase Storage.
 
 Key responsibilities:
 
@@ -165,7 +181,8 @@ Raw problems are **logged and governed**, not silently hidden.
 
 ### 2. Semantic Contract & Canonical Model
 
-KPI definitions, formulas, thresholds, drivers, lineage and access rules belong in a governed semantic layer instead of being scattered across UI or model prompts.
+KPI definitions, formulas, thresholds, drivers, lineage and access rules belong in a governed
+semantic layer instead of being scattered across UI or model prompts.
 
 This gives RootLens a reproducible rulebook for:
 
@@ -173,17 +190,21 @@ This gives RootLens a reproducible rulebook for:
 - how it is calculated
 - which dimensions and drivers are valid
 - what constitutes a material movement
-- which personas are allowed to see which information
+
+A canonical dataset can be built from **two or more sources merged together**, or from **a single
+source used directly** — both paths go through the same downstream pipeline with no special-casing
+required. Every canonical dataset is given a readable, auto-generated name (editable by the user)
+instead of an opaque identifier.
 
 ### 3. KPI Intelligence
 
-The KPI engine computes and validates KPI candidates before downstream analysis.
-
-No LLM is involved in KPI computation.
+The KPI engine computes and validates KPI candidates before downstream analysis. No LLM is involved
+in KPI computation.
 
 ### 4. Anomaly & Change Detection
 
-The analytics layer uses deterministic statistical methods to detect meaningful changes rather than treating every fluctuation as a business event.
+The analytics layer uses deterministic statistical methods to detect meaningful changes rather than
+treating every fluctuation as a business event.
 
 Current stack support includes:
 
@@ -195,7 +216,7 @@ Current stack support includes:
 
 ### 5. Driver Analysis
 
-RootLens moves beyond “anomaly detected” and asks **what explains the movement?**
+RootLens moves beyond "anomaly detected" and asks **what explains the movement?**
 
 Driver analysis can use deterministic, explainable methods such as:
 
@@ -204,7 +225,8 @@ Driver analysis can use deterministic, explainable methods such as:
 - regression / association analysis
 - statistical comparison across candidate factors
 
-Driver language remains appropriately cautious: association is not presented as causal proof unless the analytical design supports that claim.
+Driver language remains appropriately cautious: association is not presented as causal proof unless
+the analytical design supports that claim.
 
 ### 6. Evidence & Confidence
 
@@ -226,21 +248,17 @@ LOW confidence    → abstain / request review
 
 **Low-confidence path = zero LLM calls.**
 
-### 7. Persona-Aware Recommendation
+### 7. Insight & Recommendation
 
-The analytical truth remains fixed; the **decision framing** changes by persona.
+Insights and recommendations are both rendered as short, scannable **bullet points** — what happened,
+why, the recommended action, expected impact, and confidence — rather than dense paragraphs. The
+recommendation stage is the single place in the entire system where an LLM is called, and it only
+ever receives the pre-verified structured evidence package, never raw data.
 
-Examples:
+### 8. Feedback, Telemetry & Activity History
 
-| Persona | Typical scope | Output emphasis |
-|---|---|---|
-| Frontline / Operations | Local operational scope | Immediate tactical actions |
-| Regional Manager | Assigned region | Drivers, controllable levers, short-term intervention |
-| Executive / HQ | Enterprise-wide | Strategic impact, prioritization and monitoring |
-
-### 8. Feedback & Telemetry
-
-The system captures user feedback and runtime observability so recommendations are not treated as an unreviewed black box.
+The system captures user feedback, runtime observability, and a private log of each user's own
+actions, so recommendations are not treated as an unreviewed black box.
 
 Telemetry can include:
 
@@ -248,7 +266,11 @@ Telemetry can include:
 - number of LLM calls
 - token usage
 - estimated model cost
+- cache hit rate
 - feedback / correction events
+
+Activity history includes: uploads, KPI discovery runs, driver analyses, insights generated,
+recommendations generated, and feedback submitted — visible only to the user who performed them.
 
 ---
 
@@ -256,6 +278,7 @@ Telemetry can include:
 
 | Stage | Primary method | LLM used? |
 |---|---|---:|
+| Identity & access control | JWT / bcrypt | No |
 | Ingestion / profiling | Python rules + validation | No |
 | Semantic contract | Deterministic configuration | No |
 | KPI computation | Rules / statistics | No |
@@ -265,6 +288,7 @@ Telemetry can include:
 | Confidence scoring | Weighted deterministic logic | No |
 | Abstention | Rule-based confidence gate | No |
 | Deterministic insight structure | Templates | No |
+| Activity logging | Deterministic event capture | No |
 | **Recommendation phrasing** | **LLM over verified evidence package** | **Yes** |
 
 > **The LLM communicates the analytical truth; it does not create it.**
@@ -282,7 +306,9 @@ Telemetry can include:
 | Data / Analytics | **Pandas, NumPy, SciPy, Statsmodels** |
 | Change-point detection | **Ruptures** |
 | Validation / Schemas | **Pydantic v2** |
-| Storage | **SQLite (`sqlite3`, no ORM)** |
+| Database | **PostgreSQL (Supabase), via SQLAlchemy** |
+| File storage | **Supabase Storage** — private, per-user folders |
+| Authentication | **JWT (python-jose) + bcrypt (passlib)** |
 | Upload handling | **python-multipart** |
 | Environment configuration | **python-dotenv** |
 | Testing | **pytest + httpx** |
@@ -296,22 +322,32 @@ Telemetry can include:
 | Language | **TypeScript** |
 | Styling | **Tailwind CSS** |
 | Charts | **Recharts** |
-| API client | **Native `fetch`** |
+| API client | **Native `fetch`, JWT-authenticated wrapper** |
 
 ### LLM
 
-- **Anthropic Claude API** via the `anthropic` Python SDK
-- API key loaded from `.env` as `ANTHROPIC_API_KEY`
+- **Google Gemini API** via the official `google-genai` Python SDK
+- API key loaded from `.env` as `GEMINI_API_KEY`
 - Used only in the final recommendation stage
+- The model receives only the pre-verified structured evidence package, never raw enterprise data
+
+### Deployment target
+
+- **Backend:** Render
+- **Frontend:** Vercel
+- **Database & Storage:** Supabase (managed Postgres + object storage)
+
+Currently developed and verified running locally against a live Supabase project; deployment to
+Render/Vercel is a configuration-only step (environment variables), not a code change.
 
 ### Deliberately Out of Scope for the Prototype
 
 - Docker
-- ORM layer
-- production authentication provider
-- production SSO / OAuth
+- Enterprise SSO / OAuth (Okta, Azure AD, etc.)
+- Horizontal scaling / load balancing
 
-Persona-based access control in this prototype is **application-level authorization logic**, not a replacement for real enterprise authentication.
+Authentication in this prototype is a genuine, working JWT-based system with per-user data
+isolation — not a stub — but it is not yet integrated with an enterprise identity provider.
 
 ---
 
@@ -321,11 +357,14 @@ Persona-based access control in this prototype is **application-level authorizat
 kpi-intelligence-engine/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py                     # FastAPI app / CORS / routers
+│   │   ├── main.py                     # FastAPI app / CORS / routers / global error handling
 │   │   ├── config.py                   # environment configuration
-│   │   ├── db.py                       # SQLite connection helper
+│   │   ├── db.py                       # SQLAlchemy engine & session
+│   │   ├── models/
+│   │   │   └── tables.py               # SQLAlchemy models (all tables, incl. users, activity_log)
 │   │   ├── api/                        # thin HTTP route handlers
 │   │   │   ├── health.py
+│   │   │   ├── auth.py
 │   │   │   ├── ingestion.py
 │   │   │   ├── profiling.py
 │   │   │   ├── semantic_contract.py
@@ -335,41 +374,43 @@ kpi-intelligence-engine/
 │   │   │   ├── anomaly.py
 │   │   │   ├── drivers.py
 │   │   │   ├── evidence.py
-│   │   │   ├── persona.py
 │   │   │   ├── insights.py
 │   │   │   ├── recommendations.py
 │   │   │   ├── feedback.py
+│   │   │   ├── history.py
 │   │   │   └── telemetry.py
 │   │   ├── core/                       # framework-agnostic business logic
+│   │   │   ├── auth/
 │   │   │   ├── ingestion/
 │   │   │   ├── profiling/
 │   │   │   ├── semantic/
 │   │   │   ├── quality/
 │   │   │   ├── canonical/
+│   │   │   ├── storage/
 │   │   │   ├── kpi_engine/
 │   │   │   ├── anomaly/
 │   │   │   ├── drivers/
 │   │   │   ├── evidence/
 │   │   │   ├── confidence/
-│   │   │   ├── persona/
 │   │   │   ├── insight_templates/
 │   │   │   ├── recommendation/
 │   │   │   ├── llm/
 │   │   │   ├── feedback/
-│   │   │   └── telemetry/
-│   │   └── models/                     # shared Pydantic schemas
-│   ├── tests/                          # mirrors core modules
-│   ├── data/
-│   │   ├── uploads/
-│   │   └── app.db
+│   │   │   ├── activity/
+│   │   │   ├── telemetry/
+│   │   │   └── errors.py               # standardized error shape                      
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
 │   ├── src/
 │   │   ├── main.tsx
 │   │   ├── App.tsx
+│   │   ├── context/
+│   │   │   └── AuthContext.tsx
 │   │   ├── pages/
-│   │   │   ├── UploadPage.tsx
+│   │   │   ├── LoginPage.tsx
+│   │   │   ├── RegisterPage.tsx
+│   │   │   ├── UploadPage.tsx          # default landing page
 │   │   │   ├── ProfilePage.tsx
 │   │   │   ├── SemanticContractPage.tsx
 │   │   │   ├── DataQualityPage.tsx
@@ -381,25 +422,26 @@ kpi-intelligence-engine/
 │   │   │   ├── InsightsPage.tsx
 │   │   │   ├── RecommendationsPage.tsx
 │   │   │   ├── FeedbackPage.tsx
+│   │   │   ├── HistoryPage.tsx
 │   │   │   ├── TelemetryPage.tsx
 │   │   │   └── DashboardPage.tsx
 │   │   ├── components/
-│   │   ├── api/
+│   │   ├── api/                        # authenticated fetch wrappers, one per backend domain
 │   │   └── types/
 │   ├── package.json
 │   ├── tailwind.config.js
 │   └── vite.config.ts
 └── docs/
-    ├── KPI_Engine_Final_Architecture.md
-    └── kilo-build-plan/
+    └── KPI_Engine_Final_Architecture.md
 ```
 
 ### Naming Conventions
 
 - `core/<module>/` contains framework-independent logic.
 - `api/<name>.py` stays thin and delegates to `core/`.
+- Every protected route depends on `get_current_user`; every user-owned table carries a `user_id`.
 - Each core module should have a matching backend test module.
-- Frontend API wrappers mirror backend API domains.
+- Frontend API wrappers mirror backend API domains and route through the authenticated client.
 - Shared frontend types should match backend Pydantic response contracts.
 - IDs use UUID strings rather than row positions or filenames.
 
@@ -411,6 +453,7 @@ kpi-intelligence-engine/
 
 - Python **3.11**
 - Node.js + npm
+- A Supabase project (PostgreSQL database + a private Storage bucket)
 - An Anthropic API key for the final LLM stage
 
 ### 1. Clone the repository
@@ -447,9 +490,14 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-Create your local environment file from `.env.example` and add:
+Create `backend/.env` from `.env.example` and fill in:
 
 ```env
+DATABASE_URL=your_supabase_pooler_connection_string
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_SERVICE_KEY=your_supabase_service_role_key
+SUPABASE_STORAGE_BUCKET=uploads
+SECRET_KEY=your_generated_jwt_secret
 ANTHROPIC_API_KEY=your_key_here
 ```
 
@@ -466,45 +514,32 @@ Open a second terminal:
 ```bash
 cd frontend
 npm install
+```
+
+Create `frontend/.env` from `.env.example` with `VITE_API_BASE_URL=http://localhost:8000`.
+
+```bash
 npm run dev
 ```
 
-Open the local Vite URL displayed in the terminal.
-
----
-
-## Testing
-
-Backend tests are written with **pytest** and **httpx**.
-
-From `backend/`:
-
-```bash
-pytest
-```
-
-Recommended test coverage areas:
-
-- schema and semantic-contract validation
-- KPI computation
-- anomaly / change detection
-- driver ranking
-- confidence and abstention paths
-- persona restrictions
-- recommendation payload validation
-- feedback persistence
-- telemetry logging
+Open the local Vite URL displayed in the terminal, **register a new account**, and you'll land on
+the Upload page to begin.
 
 ---
 
 ## Security & Governance
 
-RootLens is designed to keep governance visible rather than implicit.
+RootLens keeps governance visible rather than implicit.
 
-### Prototype controls
+### Identity & access
 
-- persona-based scope restrictions
-- sensitive-field filtering
+- Real user accounts: bcrypt-hashed passwords, JWT-based sessions
+- Every table and every stored file is scoped to the authenticated user, enforced on every request
+  — verified by automated cross-user isolation tests, not left to convention
+- Uploaded files live in private, per-user Supabase Storage folders
+
+### Analytical governance
+
 - deterministic KPI definitions
 - explicit confidence and abstention
 - method / evidence / lineage visibility
@@ -513,9 +548,9 @@ RootLens is designed to keep governance visible rather than implicit.
 
 ### Important boundary
 
-The prototype's persona logic is **authorization behavior for demonstration**, not a production authentication system.
-
-A production deployment would move identity and access enforcement to enterprise-grade SSO/OAuth and warehouse-level row/column security.
+Authentication here is a real, working system, not a demonstration stub — but it has not been
+extended to enterprise identity providers (SSO/OAuth), rate limiting, or advanced session policies.
+A production deployment would add those on top of the isolation model already in place.
 
 ---
 
@@ -524,16 +559,16 @@ A production deployment would move identity and access enforcement to enterprise
 | Round 2 expectation | RootLens implementation |
 |---|---|
 | Detect and prioritize material KPI movements | KPI materiality + anomaly engine |
-| Reconcile heterogeneous enterprise data | Ingestion, profiling, data quality and canonical model |
+| Reconcile heterogeneous enterprise data | Ingestion, profiling, data quality and canonical model — single-source or multi-source |
 | Identify and rank explanatory drivers | Deterministic driver analysis |
-| Produce persona-specific narratives | Persona layer + final LLM phrasing |
+| Produce clear, decision-ready narratives | Bulleted insight and recommendation output, final LLM phrasing |
 | Communicate uncertainty and abstain | Confidence engine + explicit abstention path |
 | Recommend practical business actions | Verified recommendation evidence package |
 | Learn from analyst / user feedback | Feedback module and correction loop |
-| Respect security, latency and cost constraints | Scoped access + telemetry + one final LLM stage |
+| Protect user data and respect cost/latency constraints | Per-user authentication and isolation + telemetry + one final LLM stage |
 | Show evidence freshness, method, contribution, confidence and lineage | Evidence / confidence ledger |
 | Clearly separate LLM and non-LLM processing | Explicit processing ledger above |
-| Show runtime telemetry | Telemetry module |
+| Show runtime telemetry and user activity | Telemetry module + activity history |
 
 ---
 
@@ -542,6 +577,8 @@ A production deployment would move identity and access enforcement to enterprise
 The strongest demo is one continuous investigation rather than a feature tour:
 
 ```text
+Register / log in
+   ↓
 KPI movement
    ↓
 materiality / anomaly
@@ -552,36 +589,40 @@ evidence
    ↓
 confidence
    ↓
-persona-specific action
+bulleted recommendation
    ↓
-telemetry
+telemetry & activity history
 ```
 
 Recommended recording sequence:
 
-1. Run one **high-confidence, multi-factor** case.
-2. Inspect ranked drivers and evidence.
-3. Show that the LLM only appears after verification.
-4. Switch persona on the same underlying analytical truth.
+1. Register two separate accounts and briefly show that each only ever sees its own uploaded data —
+   proves isolation before anything else.
+2. Run one **high-confidence, multi-factor** case in one account.
+3. Inspect ranked drivers and evidence.
+4. Show that the LLM only appears after verification, via the LLM ledger.
 5. Run one **low-confidence** case and show abstention.
-6. Finish on telemetry and the final decision workspace.
+6. Finish on telemetry and that account's activity history.
 
 ---
 
 ## Limitations
 
-RootLens AI is a competition prototype, not a production enterprise deployment.
+RootLens AI is a competition prototype, not a finished production deployment.
 
 Current limitations include:
 
 - driver association does not automatically prove causation
 - confidence depends on available data and evidence quality
 - sparse history can reduce analytical certainty
-- application-level persona controls are not production authentication
-- SQLite is appropriate for prototype scale, not high-concurrency enterprise workloads
-- production deployment would require stronger identity, orchestration, observability and infrastructure controls
+- authentication is self-hosted JWT, not integrated with an enterprise SSO/OAuth provider
+- currently verified running locally against a live Supabase project; Render/Vercel deployment is a
+  planned next step, not yet live
+- production deployment would require stronger rate limiting, session policy, and infrastructure
+  observability beyond what a prototype needs
 
-The system is intentionally designed to **surface uncertainty and constraints instead of hiding them**.
+The system is intentionally designed to **surface uncertainty and constraints instead of hiding
+them** — that applies to its own maturity as a project, too.
 
 ---
 
@@ -590,7 +631,7 @@ The system is intentionally designed to **surface uncertainty and constraints in
 > Replace these before final submission.
 
 - **Demo Video:** `<https://drive.google.com/file/d/1VChmUIpTrfZFgR-VB6StVOQ92OmF6E5h/view?usp=sharing>`
-- **Repository:** `<https://github.com/sridutt15/AIC_2026_FINAL>`
+- **Repository:** `<https://github.com/prajyoth2006/AIC_2026>`
 
 ---
 
@@ -599,8 +640,8 @@ The system is intentionally designed to **surface uncertainty and constraints in
 **Team CreativeChaos — IIT Patna**
 
 - Dikshant Khobragade — Team Lead
-- R. SriDutt
 - M. Prajyoth
+- R. SriDutt
 
 Built for **Accenture Innovation Challenge 2026 — Round 2, BusinessIntelligence.ai**.
 
@@ -608,8 +649,9 @@ Built for **Accenture Innovation Challenge 2026 — Round 2, BusinessIntelligenc
 
 <div align="center">
 
-### Detect → Diagnose → Verify → Confidence → Act
+### Identity → Detect → Diagnose → Verify → Confidence → Act
 
-**Every number is computed. Every insight is evidenced. The LLM speaks last.**
+**Every number is computed. Every insight is evidenced. Every user's data is their own. The LLM
+speaks last.**
 
 </div>

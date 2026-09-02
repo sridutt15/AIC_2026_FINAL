@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import { getProfile } from '../api/profiling'
 import { listSources } from '../api/ingestion'
 import type { ColumnProfile, ProfileResult, SourceInfo } from '../types'
+import { PageHeader, staggerContainer } from '../components/ui'
+import { Table2 } from 'lucide-react'
+import { motion } from 'framer-motion'
 
 const ROLE_COLORS: Record<string, string> = {
   temporal: 'bg-purple-100 text-purple-700',
@@ -13,7 +16,7 @@ const ROLE_COLORS: Record<string, string> = {
 function RoleBadge({ role }: { role: string }) {
   return (
     <span
-      className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${ROLE_COLORS[role] ?? 'bg-gray-100 text-gray-700'}`}
+      className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${ROLE_COLORS[role] ?? 'bg-slate-100 text-slate-700'}`}
     >
       {role}
     </span>
@@ -55,17 +58,14 @@ export default function ProfilePage() {
   const columns: ColumnProfile[] = result?.profile.columns ?? []
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-gray-800">Source profile</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          Deterministic per-column profile: dtype, nulls, cardinality, and detected role.
-        </p>
+    <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-6">
+      <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+        <PageHeader icon={<Table2 size={20} />} title="Data profile" description="Deterministic column profile for an uploaded source — types, null rates, distinct counts, and stats." />
         <div className="mt-3 flex items-center gap-3">
           <select
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
-            className="block w-72 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
+            className="block w-72 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700 focus:border-accent-500 focus:outline-none"
           >
             <option value="" disabled>
               Select a source…
@@ -76,18 +76,18 @@ export default function ProfilePage() {
               </option>
             ))}
           </select>
-          {loading && <span className="text-sm text-gray-400">Profiling…</span>}
+          {loading && <span className="text-sm text-slate-400">Profiling…</span>}
         </div>
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </div>
 
       {result && (
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-gray-800">
+            <h3 className="text-sm font-semibold text-slate-800">
               {result.source.filename} — {result.profile.row_count} rows
             </h3>
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-slate-400">
               {result.cached ? 'cached result' : 'freshly profiled'}
             </span>
           </div>
@@ -95,7 +95,7 @@ export default function ProfilePage() {
           <div className="mt-3 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
+                <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                   <th className="py-2 pr-4">Column</th>
                   <th className="py-2 pr-4">dtype</th>
                   <th className="py-2 pr-4">Null %</th>
@@ -106,17 +106,17 @@ export default function ProfilePage() {
               </thead>
               <tbody>
                 {columns.map((col) => (
-                  <tr key={col.name} className="border-b border-gray-100">
-                    <td className="py-2 pr-4 font-medium text-gray-800">{col.name}</td>
-                    <td className="py-2 pr-4 text-gray-500">{col.dtype}</td>
-                    <td className="py-2 pr-4 text-gray-600">
+                  <tr key={col.name} className="border-b border-slate-100">
+                    <td className="py-2 pr-4 font-medium text-slate-800">{col.name}</td>
+                    <td className="py-2 pr-4 text-slate-500">{col.dtype}</td>
+                    <td className="py-2 pr-4 text-slate-600">
                       {(col.null_ratio * 100).toFixed(1)}%
                     </td>
-                    <td className="py-2 pr-4 text-gray-600">{col.cardinality}</td>
+                    <td className="py-2 pr-4 text-slate-600">{col.cardinality}</td>
                     <td className="py-2 pr-4">
                       <RoleBadge role={col.detected_role} />
                     </td>
-                    <td className="py-2 text-gray-500">
+                    <td className="py-2 text-slate-500">
                       {col.sample_values.map(formatSample).join(', ')}
                     </td>
                   </tr>
@@ -126,6 +126,6 @@ export default function ProfilePage() {
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }

@@ -1,3 +1,111 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ---- Design tokens (single source of truth; tailwind.config mirrors) ---- */
+:root {
+  --font-app: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
+  --color-accent: #6d5ef5;
+  --color-accent-strong: #5b48e8;
+  --space-grid: 8px;
+  --radius-card: 14px;
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --shadow-card-hover: 0 4px 8px -2px rgba(16, 24, 40, 0.08),
+    0 12px 24px -6px rgba(109, 94, 245, 0.12);
+}
+
+/* ---- App-wide base ---- */
+html {
+  font-family: var(--font-app);
+}
+
+body {
+  @apply bg-slate-50 text-slate-800 antialiased;
+  font-feature-settings: 'ss01', 'cv11';
+}
+
+/* Soft blurred-blob background behind glass panels — light & non-distracting */
+.app-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      42rem 30rem at 12% -8%,
+      rgba(109, 94, 245, 0.09),
+      transparent 60%
+    ),
+    radial-gradient(
+      36rem 26rem at 95% 8%,
+      rgba(52, 211, 153, 0.07),
+      transparent 55%
+    ),
+    radial-gradient(
+      40rem 34rem at 55% 108%,
+      rgba(129, 140, 248, 0.08),
+      transparent 60%
+    );
+}
+
+/* ---- Glass panels (sidebar, topbar, modals, floating panels) ---- */
+.glass {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow: 0 8px 32px rgba(31, 38, 135, 0.08);
+}
+
+.glass-strong {
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(18px) saturate(1.6);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 8px 32px rgba(31, 38, 135, 0.1);
+}
+
+/* ---- Consistent focus rings on inputs everywhere ---- */
+.input-base {
+  @apply w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 transition focus:border-accent-500 focus:outline-none focus:ring-4 focus:ring-accent-500/15;
+}
+
+/* ---- Shimmer skeleton ---- */
+.skeleton {
+  @apply relative overflow-hidden rounded-lg bg-slate-200/70;
+}
+.skeleton::after {
+  content: '';
+  @apply absolute inset-0 -translate-x-full animate-shimmer;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.65),
+    transparent
+  );
+}
+
+/* ---- Table polish ---- */
+.table-hover-row {
+  @apply transition-colors duration-150 hover:bg-accent-50/50;
+}
+
+/* ---- Pulsing "connected" dot ---- */
+.pulse-dot {
+  @apply relative inline-flex h-2 w-2 rounded-full bg-emerald-500;
+}
+.pulse-dot::after {
+  content: '';
+  @apply absolute inset-0 rounded-full bg-emerald-400;
+  animation: ring 1.8s ease-out infinite;
+}
+@keyframes ring {
+  0% { transform: scale(1); opacity: 0.7; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+
+/* Recharts default font + grid theme */
+.recharts-text {
+  font-family: var(--font-app);
+}

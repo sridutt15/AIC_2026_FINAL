@@ -1,4 +1,12 @@
-/** Auth context: user + tokens persisted in localStorage (Phase 13). */
+/** Auth context: user + tokens persisted in localStorage (Phase 13).
+ *
+ * Guest Mode (UI redesign): `isGuest` lives ONLY in this top-level state —
+ * in-memory React state, never written to localStorage/sessionStorage, and
+ * guest sessions never hit the backend's persistence layers (no token is
+ * attached, so every API call 401s client-side before leaving the app; pages
+ * therefore render their empty/placeholder states). Reloading the tab
+ * destroys a guest session by design — there is nothing to restore.
+ */
 
 import {
   createContext,
@@ -15,6 +23,7 @@ import {
   loginUser,
   logoutUser,
   registerUser,
+  setGuestMarker,
   type AuthUser,
 } from '../api/authClient'
 
@@ -22,20 +31,35 @@ interface AuthContextValue {
   user: AuthUser | null
   accessToken: string | null
   ready: boolean
+  isGuest: boolean
   login: (email: string, password: string) => Promise<void>
   register: (email: string, password: string, fullName: string) => Promise<void>
   logout: () => Promise<void>
+  startGuest: () => void
+  exitGuest: () => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
+
+const GUEST_USER: AuthUser = {
+  user_id: 'guest-session',
+  email: 'guest',
+  full_name: 'Guest',
+  role: 'guest',
+  created_at: '',
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [accessToken, setAccessToken] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
+  // Guest flag: top-level, in-memory ONLY. Never persisted anywhere.
+  const [isGuest, setIsGuest] = useState(false)
 
   // Restore the session from localStorage on first load (stay logged in
   // across page refreshes) — validate via /auth/me, else drop the state.
+  // A guest session is deliberately NOT restored: it only ever lived in
+  // memory, so a reload ends it.
   useEffect(() => {
     const storedToken = localStorage.getItem('accessToken')
     const storedUser = localStorage.getItem('user')
@@ -98,13 +122,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('accessToken')
     localStorage.removeItem('refreshToken')
     localStorage.removeItem('user')
+    setGuestMarker(false)
     setAccessToken(null)
+    setUser(null)
+    setIsGuest(false)
+  }, [])
+
+  const startGuest = useCallback(() => {
+    // In-memory only: no localStorage, no sessionStorage, no API call.
+    // The module flag gates authFetch so guest requests never reach the backend.
+    setGuestMarker(true)
+    setIsGuest(true)
+    setUser(GUEST_USER)
+    setAccessToken(null)
+  }, [])
+
+  const exitGuest = useCallback(() => {
+    setGuestMarker(false)
+    setIsGuest(false)
     setUser(null)
   }, [])
 
   const value = useMemo(
-    () => ({ user, accessToken, ready, login, register, logout }),
-    [user, accessToken, ready, login, register, logout],
+    () => ({
+      user,
+      accessToken,
+      ready,
+      isGuest,
+      login,
+      register,
+      logout,
+      startGuest,
+      exitGuest,
+    }),
+    [user, accessToken, ready, isGuest, login, register, logout, startGuest, exitGuest],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

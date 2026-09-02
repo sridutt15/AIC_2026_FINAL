@@ -15,6 +15,9 @@ import {
 } from 'recharts'
 import { getTelemetrySummary } from '../api/telemetry'
 import type { TelemetrySummary } from '../types'
+import { PageHeader, staggerContainer } from '../components/ui'
+import { Activity } from 'lucide-react'
+import { motion } from 'framer-motion'
 
 function fmtCost(usd: number): string {
   return `$${usd.toFixed(6)}`
@@ -63,13 +66,9 @@ export default function TelemetryPage() {
   )
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-gray-800">Telemetry & cost dashboard</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          Real logged data: per-stage latency from the timing decorator, LLM
-          calls/tokens/cost from the llm_calls ledger, and the cache hit rate.
-        </p>
+    <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-6">
+      <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+        <PageHeader icon={<Activity size={20} />} title="Telemetry" description="Stage latencies, LLM usage, cost, and cache hit rates — the ops view." />
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </div>
 
@@ -90,18 +89,18 @@ export default function TelemetryPage() {
             ].map((card) => (
               <div
                 key={card.label}
-                className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
+                className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
               >
-                <p className="text-xs uppercase tracking-wide text-gray-500">{card.label}</p>
-                <p className="mt-1 text-xl font-semibold text-gray-800">{card.value}</p>
+                <p className="text-xs uppercase tracking-wide text-slate-500">{card.label}</p>
+                <p className="mt-1 text-xl font-semibold text-slate-800">{card.value}</p>
               </div>
             ))}
           </div>
 
-          <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-            <h3 className="text-sm font-semibold text-gray-800">Average latency per stage</h3>
+          <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+            <h3 className="text-sm font-semibold text-slate-800">Average latency per stage</h3>
             {latencyData.length === 0 ? (
-              <p className="mt-2 text-sm text-gray-400">
+              <p className="mt-2 text-sm text-slate-400">
                 No stage timings recorded yet — run drivers, insights, or a
                 recommendation first.
               </p>
@@ -125,10 +124,10 @@ export default function TelemetryPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-800">LLM cost over time</h3>
+            <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+              <h3 className="text-sm font-semibold text-slate-800">LLM cost over time</h3>
               {costData.length === 0 ? (
-                <p className="mt-2 text-sm text-gray-400">
+                <p className="mt-2 text-sm text-slate-400">
                   No LLM calls yet — generate a recommendation first.
                 </p>
               ) : (
@@ -147,8 +146,8 @@ export default function TelemetryPage() {
               )}
             </div>
 
-            <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-800">Cache hit rate</h3>
+            <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+              <h3 className="text-sm font-semibold text-slate-800">Cache hit rate</h3>
               <div className="mt-4 flex items-center gap-6">
                 <div className="h-48 w-48">
                   <ResponsiveContainer width="100%" height="100%">
@@ -169,11 +168,11 @@ export default function TelemetryPage() {
                   </ResponsiveContainer>
                 </div>
                 <div className="space-y-2 text-sm">
-                  <p className="text-3xl font-semibold text-gray-800">
+                  <p className="text-3xl font-semibold text-slate-800">
                     {(cacheRate * 100).toFixed(1)}%
                   </p>
-                  <p className="text-gray-600">{cachedCount} cached · {liveCount} live</p>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-slate-600">{cachedCount} cached · {liveCount} live</p>
+                  <p className="text-xs text-slate-400">
                     Cache hits reuse stored text — zero incremental API cost.
                   </p>
                 </div>
@@ -182,25 +181,25 @@ export default function TelemetryPage() {
           </div>
 
           {adjustmentEntries.length > 0 && (
-            <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-800">
+            <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+              <h3 className="text-sm font-semibold text-slate-800">
                 Feedback-adjusted driver weights
               </h3>
-              <p className="mt-1 text-sm text-gray-500">
+              <p className="mt-1 text-sm text-slate-500">
                 Deterministic multipliers from analyst verdicts (reject lowers
                 by 0.15 each, confirm restores by 0.075, floor 0.25).
               </p>
               <ul className="mt-3 space-y-2">
                 {adjustmentEntries.map(([type, multiplier]) => (
                   <li key={type} className="flex items-center gap-3">
-                    <span className="w-32 text-sm font-medium text-gray-700">{type}</span>
-                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
+                    <span className="w-32 text-sm font-medium text-slate-700">{type}</span>
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
                       <div
                         className={`h-full rounded-full ${multiplier < 1 ? 'bg-red-400' : 'bg-green-500'}`}
                         style={{ width: `${multiplier * 100}%` }}
                       />
                     </div>
-                    <span className="w-12 text-right text-sm text-gray-600">
+                    <span className="w-12 text-right text-sm text-slate-600">
                       {multiplier.toFixed(2)}x
                     </span>
                   </li>
@@ -210,6 +209,6 @@ export default function TelemetryPage() {
           )}
         </>
       )}
-    </div>
+    </motion.div>
   )
 }

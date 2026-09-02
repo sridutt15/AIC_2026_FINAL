@@ -98,7 +98,26 @@ function clearSession(): void {
 /** fetch wrapper: attaches the Bearer token; on token_expired/token_invalid
  * tries one silent refresh, then retries; if that fails, logs out + redirects.
  * Accepts either a path ("/ingestion/sources") or a full URL. */
+/** True while a guest session is active — guest requests never leave the
+ * browser (see authFetch). Module-level in-memory flag ONLY: no storage of
+ * any kind, so a reload destroys the guest session by design. AuthContext
+ * keeps it in sync with its own in-memory isGuest state. */
+let __guestActive = false
+
+export function isGuestSession(): boolean {
+  return __guestActive
+}
+
+export function setGuestMarker(active: boolean): void {
+  __guestActive = active
+}
+
 export async function authFetch(path: string, options: RequestInit = {}): Promise<Response> {
+  // Guest mode: no backend calls at all. Pages catch the failure and show
+  // their empty/placeholder states — nothing persists, by design.
+  if (isGuestSession()) {
+    throw new DOMException('Guest session — data is not persisted', 'AbortError')
+  }
   const token = localStorage.getItem('accessToken')
   const headers = new Headers(options.headers)
   if (token) {

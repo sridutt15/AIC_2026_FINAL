@@ -19,6 +19,9 @@ import type {
   RunAllAnomaliesResponse,
 } from '../types'
 import ConfidenceBadge, { AbstainCard } from '../components/ConfidenceBadge'
+import { PageHeader, staggerContainer } from '../components/ui'
+import { AlertTriangle } from 'lucide-react'
+import { motion } from 'framer-motion'
 
 const METHOD_META = {
   change_points: { color: '#dc2626', label: 'Change point (PELT)' },
@@ -120,19 +123,14 @@ export default function AnomalyPage() {
   }, [selected])
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-gray-800">Anomaly detection</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          Click Discover Anomalies to run detection for every computable KPI in the
-          dataset — change points (PELT), control-limit breaches (±3σ), and robust
-          MAD outliers — in one operation. Results are cached per dataset.
-        </p>
+    <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-6">
+      <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+        <PageHeader icon={<AlertTriangle size={20} />} title="Anomaly detection" description="Change points (PELT), control-limit breaches, and MAD outliers — batched across every KPI." />
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <select
             value={datasetId}
             onChange={(e) => setDatasetId(e.target.value)}
-            className="block w-56 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+            className="block w-56 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-accent-500 focus:outline-none"
           >
             <option value="" disabled>
               Dataset…
@@ -146,14 +144,14 @@ export default function AnomalyPage() {
           <button
             onClick={() => void handleDiscover()}
             disabled={loading || !datasetId}
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="rounded-md bg-accent-500 px-4 py-2 text-sm font-medium text-white hover:bg-accent-600 disabled:opacity-50"
           >
             {loading ? 'Discovering anomalies…' : 'Discover Anomalies'}
           </button>
           <button
             onClick={() => void handleDiscover(true)}
             disabled={loading || !datasetId}
-            className="rounded-md border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+            className="rounded-md border border-accent-300 bg-white px-3 py-2 text-sm font-medium text-accent-700 hover:bg-accent-50 disabled:opacity-50"
             title="Re-run anomaly detection for all KPIs"
           >
             Refresh
@@ -162,7 +160,7 @@ export default function AnomalyPage() {
             <select
               value={selectedKpiId}
               onChange={(e) => setSelectedKpiId(e.target.value)}
-              className="block max-w-md flex-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+              className="block max-w-md flex-1 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-accent-500 focus:outline-none"
             >
               <option value="" disabled>
                 KPI…
@@ -198,17 +196,17 @@ export default function AnomalyPage() {
       </div>
 
       {!loading && results.length === 0 && !error && (
-        <p className="rounded-lg border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+        <p className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
           Nothing cached yet — click Discover Anomalies above. (KPIs must be
           discovered first on the KPIs page.)
         </p>
       )}
 
       {selected && selected.anomalies && counts && (
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-gray-800">{selected.definition.name}</h3>
-            <div className="flex gap-3 text-xs text-gray-500">
+            <h3 className="text-sm font-semibold text-slate-800">{selected.definition.name}</h3>
+            <div className="flex gap-3 text-xs text-slate-500">
               {Object.entries(METHOD_META).map(([method, meta]) => (
                 <span key={method} className="flex items-center gap-1">
                   <span
@@ -216,7 +214,7 @@ export default function AnomalyPage() {
                     style={{ backgroundColor: meta.color }}
                   />
                   {meta.label}:{' '}
-                  <b className="text-gray-700">{counts[method as keyof typeof counts]}</b>
+                  <b className="text-slate-700">{counts[method as keyof typeof counts]}</b>
                 </span>
               ))}
             </div>
@@ -294,12 +292,12 @@ export default function AnomalyPage() {
           )}
 
           {counts.change_points + counts.control_limit_breaches + counts.outliers === 0 && (
-            <p className="mt-3 text-sm text-gray-500">No anomalies detected for this KPI.</p>
+            <p className="mt-3 text-sm text-slate-500">No anomalies detected for this KPI.</p>
           )}
 
           {selected.findings.length > 0 && (
-            <div className="mt-4 border-t border-gray-100 pt-4">
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Detections with confidence
               </h4>
               <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -308,17 +306,17 @@ export default function AnomalyPage() {
                   return (
                     <div
                       key={f.finding.key}
-                      className="flex items-center justify-between gap-2 rounded-md border border-gray-200 px-3 py-2"
+                      className="flex items-center justify-between gap-2 rounded-md border border-slate-200 px-3 py-2"
                     >
                       <div className="min-w-0">
-                        <p className="flex items-center gap-1.5 truncate text-xs font-medium text-gray-700">
+                        <p className="flex items-center gap-1.5 truncate text-xs font-medium text-slate-700">
                           <span
                             className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
                             style={{ backgroundColor: meta?.color ?? '#999' }}
                           />
                           {meta?.label ?? f.finding.method}
                         </p>
-                        <p className="truncate text-xs text-gray-500">
+                        <p className="truncate text-xs text-slate-500">
                           {f.finding.period ? String(f.finding.period).slice(0, 10) : '—'} · value{' '}
                           {f.finding.value !== null ? fmt(f.finding.value) : '—'}
                         </p>
@@ -346,7 +344,7 @@ export default function AnomalyPage() {
           )}
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }
 

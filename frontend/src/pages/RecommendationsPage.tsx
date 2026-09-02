@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { listDatasets, listKpis } from '../api/kpi'
 import { getRecommendation, getLlmLedger } from '../api/recommendations'
+import { PageHeader, staggerContainer } from '../components/ui'
+import { Target } from 'lucide-react'
+import { motion } from 'framer-motion'
 import type {
   LlmLedgerResponse,
   RecommendationPackage,
@@ -103,19 +106,14 @@ export default function RecommendationsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-gray-800">Recommendations</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          LLM-phrased recommendations built strictly from the Phase 9 structured
-          package — the model never sees raw data. Identical packages are
-          served from cache (no duplicate API cost).
-        </p>
+    <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-6">
+      <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+        <PageHeader icon={<Target size={20} />} title="Recommendations" description="Structured seven-field packages plus LLM-phrased bulleted actions." />
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <select
             value={datasetId}
             onChange={(e) => setDatasetId(e.target.value)}
-            className="block w-56 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+            className="block w-56 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-accent-500 focus:outline-none"
           >
             <option value="" disabled>
               Dataset…
@@ -129,7 +127,7 @@ export default function RecommendationsPage() {
           <select
             value={kpiId}
             onChange={(e) => setKpiId(e.target.value)}
-            className="block max-w-md flex-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+            className="block max-w-md flex-1 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-accent-500 focus:outline-none"
           >
             <option value="" disabled>
               KPI…
@@ -143,22 +141,22 @@ export default function RecommendationsPage() {
           <button
             onClick={handleRegenerate}
             disabled={!kpiId || loading}
-            className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md bg-accent-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Regenerate
           </button>
-          {loading && <span className="text-sm text-gray-400">Working…</span>}
+          {loading && <span className="text-sm text-slate-400">Working…</span>}
         </div>
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </div>
 
       {rec && (
         <>
-          <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-gray-800">
+              <h3 className="text-sm font-semibold text-slate-800">
                 Recommendation
-                <span className="ml-2 rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                <span className="ml-2 rounded-full bg-accent-50 px-2 py-0.5 text-xs font-medium text-accent-700">
                   {rec.llm_call_metadata.model ?? 'LLM'}
                 </span>
                 {rec.llm_call_metadata.cached ? (
@@ -167,33 +165,33 @@ export default function RecommendationsPage() {
                   </span>
                 ) : null}
               </h3>
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-slate-500">
                 {rec.llm_call_metadata.prompt_tokens} in / {rec.llm_call_metadata.completion_tokens} out ·{' '}
                 {rec.llm_call_metadata.latency_ms} ms · {fmtCost(rec.llm_call_metadata.cost_usd)}
               </span>
             </div>
-            <ul className="mt-3 list-disc space-y-1 rounded-md bg-gray-50 p-4 pl-8 text-sm leading-relaxed text-gray-800">
+            <ul className="mt-3 list-disc space-y-1 rounded-md bg-slate-50 p-4 pl-8 text-sm leading-relaxed text-slate-800">
               {(rec.recommendation_bullets ?? []).map((b: string, i: number) => (
                 <li key={i}>{b}</li>
               ))}
             </ul>
           </div>
 
-          <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-            <h3 className="text-sm font-semibold text-gray-800">
+          <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+            <h3 className="text-sm font-semibold text-slate-800">
               Underlying structured package
             </h3>
-            <p className="mt-1 text-sm text-gray-500">
+            <p className="mt-1 text-sm text-slate-500">
               Everything the LLM was given — compare against the text above to
               confirm no structure was invented beyond these fields.
             </p>
             <dl className="mt-4 space-y-3">
               {PACKAGE_FIELDS.map(({ key, label }) => (
                 <div key={key} className="grid grid-cols-1 gap-1 md:grid-cols-4 md:gap-3">
-                  <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
                     {label}
                   </dt>
-                  <dd className="text-sm text-gray-800 md:col-span-3">
+                  <dd className="text-sm text-slate-800 md:col-span-3">
                     {renderPackageField(rec.package, key)}
                   </dd>
                 </div>
@@ -204,24 +202,24 @@ export default function RecommendationsPage() {
       )}
 
       {ledger && (
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-          <h3 className="text-sm font-semibold text-gray-800">LLM Ledger</h3>
-          <p className="mt-1 text-sm text-gray-500">
+        <div className="rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-card-hover">
+          <h3 className="text-sm font-semibold text-slate-800">LLM Ledger</h3>
+          <p className="mt-1 text-sm text-slate-500">
             Stage-by-stage LLM usage across the architecture — {ledger.summary.deterministic_stages}{' '}
             deterministic stages, {ledger.summary.llm_stages} LLM stage.
           </p>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500">
+                <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                   <th className="py-2 pr-4">Stage</th>
                   <th className="py-2 pr-4">LLM used</th>
                 </tr>
               </thead>
               <tbody>
                 {ledger.stages.map((s) => (
-                  <tr key={s.stage} className="border-b border-gray-100 last:border-0">
-                    <td className="py-1.5 pr-4 text-gray-700">{s.stage}</td>
+                  <tr key={s.stage} className="border-b border-slate-100 last:border-0">
+                    <td className="py-1.5 pr-4 text-slate-700">{s.stage}</td>
                     <td className="py-1.5 pr-4">
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -238,17 +236,17 @@ export default function RecommendationsPage() {
               </tbody>
             </table>
           </div>
-          <div className="mt-3 flex flex-wrap gap-4 text-xs text-gray-600">
+          <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-600">
             <span>
-              total LLM calls: <b className="text-gray-800">{ledger.totals.llm_calls}</b>
+              total LLM calls: <b className="text-slate-800">{ledger.totals.llm_calls}</b>
             </span>
             <span>
-              total cost: <b className="text-gray-800">{fmtCost(ledger.totals.cost_usd)}</b>
+              total cost: <b className="text-slate-800">{fmtCost(ledger.totals.cost_usd)}</b>
             </span>
             {ledger.last_call && (
               <span>
                 last call:{' '}
-                <b className="text-gray-800">
+                <b className="text-slate-800">
                   {ledger.last_call.prompt_tokens} in / {ledger.last_call.completion_tokens} out ·{' '}
                   {ledger.last_call.latency_ms} ms · {fmtCost(ledger.last_call.cost_usd)}
                   {ledger.last_call.cached ? ' · cached' : ' · live'}
@@ -258,6 +256,6 @@ export default function RecommendationsPage() {
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }
