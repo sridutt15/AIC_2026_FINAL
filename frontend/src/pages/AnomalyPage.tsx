@@ -10,16 +10,12 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { listDatasets, listKpis } from '../api/kpi'
-import { getAnomalies } from '../api/anomaly'
-import { computeKpi } from '../api/kpi'
+import { listDatasets } from '../api/kpi'
+import { runAllAnomalies } from '../api/anomaly'
+import { cachedBatch } from '../api/batchCache'
 import type {
-  AnomalyDetections,
-  AnomalyFinding,
-  AnomalyResponse,
+  BatchAnomalyResult,
   DatasetListEntry,
-  KpiComputation,
-  KpiInfo,
 } from '../types'
 import ConfidenceBadge, { AbstainCard } from '../components/ConfidenceBadge'
 
@@ -39,14 +35,11 @@ function fmt(value: number | null): string {
 export default function AnomalyPage() {
   const [datasets, setDatasets] = useState<DatasetListEntry[]>([])
   const [datasetId, setDatasetId] = useState<string>('')
-  const [kpis, setKpis] = useState<KpiInfo[]>([])
-  const [kpiId, setKpiId] = useState<string>('')
-  const [computation, setComputation] = useState<KpiComputation | null>(null)
-  const [anomalies, setAnomalies] = useState<AnomalyDetections | null>(null)
-  const [anomalyMeta, setAnomalyMeta] = useState<AnomalyResponse | null>(null)
-  const [detectionFindings, setDetectionFindings] = useState<AnomalyFinding[]>([])
+  const [results, setResults] = useState<BatchAnomalyResult[]>([])
+  const [selectedKpiId, setSelectedKpiId] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [failures, setFailures] = useState<string[]>([])
 
   useEffect(() => {
     listDatasets()
@@ -57,66 +50,65 @@ export default function AnomalyPage() {
       .catch((err) => setError(String(err)))
   }, [])
 
+  // Sidebar navigation is the trigger: opening this page runs anomaly
+  // discovery for the whole dataset in one batch (cached per dataset —
+  // re-navigation never re-runs a completed batch).
   useEffect(() => {
     if (!datasetId) return
-    setKpiId('')
-    setKpis([])
-    setComputation(null)
-    setAnomalies(null)
-    listKpis(datasetId)
-      .then((list) => {
-        const computable = list.filter((k) => k.status !== 'invalid')
-        setKpis(computable)
-        if (computable.length > 0) setKpiId(computable[0].kpi_id)
+    setError(null)
+    setFailures([])
+    setSelectedKpiId('')
+    setLoading(true)
+    cachedBatch(`anomaly:${datasetId}`, () => runAllAnomalies(datasetId))
+      .then((resp) => {
+        setResults(resp.results)
+        setFailures(resp.failures.map((f) => `${f.kpi_id.slice(0, 8)}…: ${f.error}`))
+        const firstOk = resp.results.find((r) => !r.error && r.anomalies)
+        if (firstOk) setSelectedKpiId(firstOk.kpi_id)
       })
-      .catch((err) => setError(String(err)))
+      .catch((err) => {
+        setResults([])
+        setError(String(err))
+      })
+      .finally(() => setLoading(false))
   }, [datasetId])
 
-  useEffect(() => {
-    if (!kpiId) return
-    setLoading(true)
-    setError(null)
-    Promise.all([computeKpi(kpiId), getAnomalies(kpiId, false)])
-      .then(([comp, anom]) => {
-        setComputation(comp.computation)
-        setAnomalies(anom.anomalies)
-        setAnomalyMeta(anom)
-        setDetectionFindings(anom.findings ?? [])
-      })
-      .catch((err) => setError(String(err)))
-      .finally(() => setLoading(false))
-  }, [kpiId])
+  const selected = results.find((r) => r.kpi_id === selectedKpiId) ?? null
 
-  const chartData = useMemo(() => {
-    if (!computation) return []
-    return computation.trend.map((p, i) => ({
-      ...p,
-      index: i,
-      isChangePoint: anomalies?.change_points.some((a) => a.index === i) ?? false,
-      isControlBreach:
-        anomalies?.control_limit_breaches.some((a) => a.index === i) ?? false,
-      isOutlier: anomalies?.outliers.some((a) => a.index === i) ?? false,
-    }))
-  }, [computation, anomalies])
+  // The per-KPI batch result carries anomalies keyed by method with
+  // {index, period, value}; the trend itself isn't in the anomaly payload —
+  // but findings list periods/values, and the chart marks those.
+  const marks = useMemo(() => {
+    if (!selected?.anomalies) return null
+    const out: Record<number, { cp: boolean; cl: boolean; ol: boolean; value: number | null; period: string | null }> = {}
+    for (const [i, m] of detectionsEntries(selected.anomalies)) {
+      for (const det of m) {
+        out[det.index] = out[det.index] ?? { cp: false, cl: false, ol: false, value: det.value, period: det.period }
+        if (i === 'change_points') out[det.index].cp = true
+        if (i === 'control_limit_breaches') out[det.index].cl = true
+        if (i === 'outliers') out[det.index].ol = true
+      }
+    }
+    return out
+  }, [selected])
 
   const counts = useMemo(() => {
-    if (!anomalies) return null
+    if (!selected?.anomalies) return null
     return {
-      change_points: anomalies.change_points.length,
-      control_limit_breaches: anomalies.control_limit_breaches.length,
-      outliers: anomalies.outliers.length,
+      change_points: selected.anomalies.change_points.length,
+      control_limit_breaches: selected.anomalies.control_limit_breaches.length,
+      outliers: selected.anomalies.outliers.length,
     }
-  }, [anomalies])
-
-  const selectedKpi = kpis.find((k) => k.kpi_id === kpiId)
+  }, [selected])
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <h2 className="text-base font-semibold text-gray-800">Anomaly detection</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Change points (ruptures PELT), control-limit breaches (±3σ trailing), and
-          robust MAD outliers — computed on each KPI's trend, fully deterministic.
+          Opening this page discovers anomalies for every computable KPI in the dataset —
+          change points (PELT), control-limit breaches (±3σ), and robust MAD outliers —
+          in one operation.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <select
@@ -133,35 +125,58 @@ export default function AnomalyPage() {
               </option>
             ))}
           </select>
-          <select
-            value={kpiId}
-            onChange={(e) => setKpiId(e.target.value)}
-            className="block max-w-md flex-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
-          >
-            <option value="" disabled>
-              KPI…
-            </option>
-            {kpis.map((k) => (
-              <option key={k.kpi_id} value={k.kpi_id}>
-                {k.name} {k.materiality !== undefined ? `(M ${k.materiality.toFixed(1)})` : ''}
+          {results.filter((r) => !r.error).length > 1 && (
+            <select
+              value={selectedKpiId}
+              onChange={(e) => setSelectedKpiId(e.target.value)}
+              className="block max-w-md flex-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+            >
+              <option value="" disabled>
+                KPI…
               </option>
-            ))}
-          </select>
-          {loading && <span className="text-sm text-gray-400">Detecting…</span>}
-          {anomalyMeta && (
-            <span className="text-xs text-gray-400">
-              {anomalyMeta.cached ? 'cached' : 'fresh'} ·{' '}
-              {anomalyMeta.detected_at.replace('T', ' ').slice(0, 19)} UTC
+              {results
+                .filter((r) => !r.error)
+                .map((r) => (
+                  <option key={r.kpi_id} value={r.kpi_id}>
+                    {r.definition.name}
+                  </option>
+                ))}
+            </select>
+          )}
+          {loading && (
+            <span className="text-sm text-gray-400">Discovering anomalies for all KPIs…</span>
+          )}
+          {!loading && results.length > 0 && (
+            <span className="text-sm text-green-600">
+              {results.filter((r) => !r.error).length}/{results.length} KPIs processed
             </span>
           )}
         </div>
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+        {failures.length > 0 && (
+          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3">
+            <p className="text-sm font-medium text-amber-800">
+              {failures.length} KPI{failures.length > 1 ? 's' : ''} failed during detection:
+            </p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-amber-700">
+              {failures.map((f, i) => (
+                <li key={i}>{f}</li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
-      {computation && counts && selectedKpi && (
+      {!loading && results.length === 0 && !error && (
+        <p className="rounded-lg border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+          No computable KPIs for this dataset — discover KPIs first on the KPIs page.
+        </p>
+      )}
+
+      {selected && selected.anomalies && counts && (
         <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-gray-800">{selectedKpi.name}</h3>
+            <h3 className="text-sm font-semibold text-gray-800">{selected.definition.name}</h3>
             <div className="flex gap-3 text-xs text-gray-500">
               {Object.entries(METHOD_META).map(([method, meta]) => (
                 <span key={method} className="flex items-center gap-1">
@@ -170,106 +185,94 @@ export default function AnomalyPage() {
                     style={{ backgroundColor: meta.color }}
                   />
                   {meta.label}:{' '}
-                  <b className="text-gray-700">
-                    {counts[method as keyof typeof counts]}
-                  </b>
+                  <b className="text-gray-700">{counts[method as keyof typeof counts]}</b>
                 </span>
               ))}
             </div>
           </div>
 
-          <div className="mt-4 h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis
-                  dataKey="period"
-                  tick={{ fontSize: 10 }}
-                  tickFormatter={(v) => String(v).slice(0, 10)}
-                />
-                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => fmt(Number(v))} />
-                <Tooltip
-                  formatter={(v) => (typeof v === 'number' ? fmt(v) : String(v))}
-                  labelFormatter={(l) => String(l).slice(0, 10)}
-                />
-                <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="value"
-                  name="KPI value"
-                  stroke="#4f46e5"
-                  strokeWidth={2}
-                  dot={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="isChangePoint"
-                  name="change point"
-                  stroke="transparent"
-                  legendType="none"
-                  dot={false}
-                />
-                {/* Marker dots per method, stacked as separate invisible series */}
-                {chartData
-                  .filter((p) => p.isChangePoint)
-                  .map((p) => (
-                    <ReferenceDot
-                      key={`cp-${p.index}`}
-                      x={p.period}
-                      y={p.value}
-                      r={6}
-                      fill={METHOD_META.change_points.color}
-                      stroke="white"
-                      strokeWidth={1}
-                      ifOverflow="extendDomain"
-                    />
-                  ))}
-                {chartData
-                  .filter((p) => p.isControlBreach)
-                  .map((p) => (
-                    <ReferenceDot
-                      key={`cl-${p.index}`}
-                      x={p.period}
-                      y={p.value}
-                      r={5}
-                      fill={METHOD_META.control_limit_breaches.color}
-                      stroke="white"
-                      strokeWidth={1}
-                      ifOverflow="extendDomain"
-                    />
-                  ))}
-                {chartData
-                  .filter((p) => p.isOutlier)
-                  .map((p) => (
-                    <ReferenceDot
-                      key={`ol-${p.index}`}
-                      x={p.period}
-                      y={p.value}
-                      r={4}
-                      fill={METHOD_META.outliers.color}
-                      stroke="white"
-                      strokeWidth={1}
-                      ifOverflow="extendDomain"
-                    />
-                  ))}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          {counts.change_points + counts.control_limit_breaches + counts.outliers ===
-            0 && (
-            <p className="mt-3 text-sm text-gray-500">
-              No anomalies detected for this KPI.
-            </p>
+          {marks && (
+            <div className="mt-4 h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={detectionRows(selected, marks)} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis
+                    dataKey="period"
+                    tick={{ fontSize: 10 }}
+                    tickFormatter={(v: string) => String(v).slice(0, 10)}
+                  />
+                  <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => fmt(Number(v))} />
+                  <Tooltip
+                    formatter={(v) => (typeof v === 'number' ? fmt(v) : String(v))}
+                    labelFormatter={(l) => String(l).slice(0, 10)}
+                  />
+                  <Legend />
+                  <Line
+                    type="monotone"
+                    dataKey="value"
+                    name="Flagged value"
+                    stroke="#4f46e5"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                  {detectionRows(selected, marks)
+                    .filter((p) => p.isChangePoint)
+                    .map((p, i) => (
+                      <ReferenceDot
+                        key={`cp-${i}`}
+                        x={p.period}
+                        y={p.value}
+                        r={6}
+                        fill={METHOD_META.change_points.color}
+                        stroke="white"
+                        strokeWidth={1}
+                        ifOverflow="extendDomain"
+                      />
+                    ))}
+                  {detectionRows(selected, marks)
+                    .filter((p) => p.isControlBreach)
+                    .map((p, i) => (
+                      <ReferenceDot
+                        key={`cl-${i}`}
+                        x={p.period}
+                        y={p.value}
+                        r={5}
+                        fill={METHOD_META.control_limit_breaches.color}
+                        stroke="white"
+                        strokeWidth={1}
+                        ifOverflow="extendDomain"
+                      />
+                    ))}
+                  {detectionRows(selected, marks)
+                    .filter((p) => p.isOutlier)
+                    .map((p, i) => (
+                      <ReferenceDot
+                        key={`ol-${i}`}
+                        x={p.period}
+                        y={p.value}
+                        r={4}
+                        fill={METHOD_META.outliers.color}
+                        stroke="white"
+                        strokeWidth={1}
+                        ifOverflow="extendDomain"
+                      />
+                    ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           )}
 
-          {detectionFindings.length > 0 && (
+          {counts.change_points + counts.control_limit_breaches + counts.outliers === 0 && (
+            <p className="mt-3 text-sm text-gray-500">No anomalies detected for this KPI.</p>
+          )}
+
+          {selected.findings.length > 0 && (
             <div className="mt-4 border-t border-gray-100 pt-4">
               <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                 Detections with confidence
               </h4>
               <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                {detectionFindings.map((f) => {
+                {selected.findings.map((f) => {
                   const meta = METHOD_META[f.finding.method as keyof typeof METHOD_META]
                   return (
                     <div
@@ -295,9 +298,9 @@ export default function AnomalyPage() {
                 })}
               </div>
 
-              {detectionFindings.some((f) => f.confidence?.level === 'abstain') && (
+              {selected.findings.some((f) => f.confidence?.level === 'abstain') && (
                 <div className="mt-3 space-y-2">
-                  {detectionFindings
+                  {selected.findings
                     .filter((f) => f.confidence?.level === 'abstain')
                     .map((f) => (
                       <AbstainCard
@@ -314,4 +317,29 @@ export default function AnomalyPage() {
       )}
     </div>
   )
+}
+
+/** Flatten a detections dict into [method, detections] pairs (typed). */
+function detectionsEntries(
+  d: { change_points: unknown[]; control_limit_breaches: unknown[]; outliers: unknown[] },
+): [string, { index: number; period: string | null; value: number | null }[]][] {
+  return [
+    ['change_points', d.change_points as { index: number; period: string | null; value: number | null }[]],
+    ['control_limit_breaches', d.control_limit_breaches as { index: number; period: string | null; value: number | null }[]],
+    ['outliers', d.outliers as { index: number; period: string | null; value: number | null }[]],
+  ]
+}
+
+/** Rows for the chart: one per flagged detection (period + value + flags). */
+function detectionRows(
+  _result: BatchAnomalyResult,
+  marks: Record<number, { cp: boolean; cl: boolean; ol: boolean; value: number | null; period: string | null }>,
+) {
+  return Object.entries(marks).map(([idx, m]) => ({
+    period: m.period ?? `#${idx}`,
+    value: m.value ?? 0,
+    isChangePoint: m.cp,
+    isControlBreach: m.cl,
+    isOutlier: m.ol,
+  }))
 }

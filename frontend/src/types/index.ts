@@ -159,6 +159,58 @@ export interface KpiComputeResponse {
   computation: KpiComputation
 }
 
+export interface BatchKpiResult {
+  kpi_id: string
+  definition: KpiInfo
+  computation: KpiComputation | null
+  cached: boolean
+  error: string | null
+}
+
+export interface ComputeAllResponse {
+  dataset_id: string
+  computed: number
+  failed: number
+  failures: { kpi_id: string; error: string }[]
+  results: BatchKpiResult[]
+}
+
+export interface BatchAnomalyResult {
+  kpi_id: string
+  definition: KpiInfo
+  anomalies: AnomalyDetections | null
+  findings: AnomalyFinding[]
+  cached: boolean
+  detected_at: string | null
+  error: string | null
+}
+
+export interface RunAllAnomaliesResponse {
+  dataset_id: string
+  processed: number
+  failed: number
+  failures: { kpi_id: string; error: string }[]
+  results: BatchAnomalyResult[]
+}
+
+export interface BatchDriverResult {
+  kpi_id: string
+  definition: KpiInfo
+  total_movement: number | null
+  before: { period: string; value: number } | null
+  after: { period: string; value: number } | null
+  findings: DriverFinding[]
+  error: string | null
+}
+
+export interface RunAllDriversResponse {
+  dataset_id: string
+  processed: number
+  failed: number
+  failures: { kpi_id: string; error: string }[]
+  results: BatchDriverResult[]
+}
+
 export interface DatasetListEntry {
   dataset_id: string
   name?: string | null

@@ -41,3 +41,17 @@ export async function runDiffInDiff(
   }
   return (await response.json()) as EvidenceResponse
 }
+
+import type { RunAllDriversResponse } from '../types'
+
+/** POST /drivers/run-all/{dataset_id} — decompose every computable KPI. */
+export async function runAllDrivers(datasetId: string): Promise<RunAllDriversResponse> {
+  const response = await authFetch(`${API_BASE_URL}/drivers/run-all/${datasetId}`, {
+    method: 'POST',
+  })
+  if (!response.ok) {
+    const detail = await response.text()
+    throw new Error(`Batch driver analysis failed (${response.status}): ${detail}`)
+  }
+  return (await response.json()) as RunAllDriversResponse
+}

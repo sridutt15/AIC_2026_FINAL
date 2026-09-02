@@ -11,11 +11,12 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { computeKpi, discoverKpis, listDatasets, listKpis } from '../api/kpi'
+import { computeAllKpis, discoverKpis, listDatasets, listKpis } from '../api/kpi'
+import { cachedBatch, invalidateDataset } from '../api/batchCache'
 import type {
+  BatchKpiResult,
   DatasetListEntry,
   KpiComputation,
-  KpiInfo,
   KpiStatus,
 } from '../types'
 
@@ -108,14 +109,12 @@ function KpiChart({ computation }: { computation: KpiComputation }) {
 export default function KpiDashboardPage() {
   const [datasets, setDatasets] = useState<DatasetListEntry[]>([])
   const [selected, setSelected] = useState<string>('')
-  const [kpis, setKpis] = useState<KpiInfo[]>([])
+  const [batch, setBatch] = useState<BatchKpiResult[]>([])
   const [discovering, setDiscovering] = useState(false)
-  const [detail, setDetail] = useState<{
-    definition: KpiInfo
-    computation: KpiComputation
-  } | null>(null)
-  const [loadingDetail, setLoadingDetail] = useState(false)
+  const [computing, setComputing] = useState(false)
+  const [detail, setDetail] = useState<BatchKpiResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [failures, setFailures] = useState<string[]>([])
 
   useEffect(() => {
     listDatasets()
@@ -126,45 +125,65 @@ export default function KpiDashboardPage() {
       .catch((err) => setError(String(err)))
   }, [])
 
+  // Load previously discovered KPIs (and their cached computations) — no
+  // automatic discovery on page open; the user clicks Discover KPIs.
   useEffect(() => {
     if (!selected) return
     setDetail(null)
+    setError(null)
+    setFailures([])
     listKpis(selected)
-      .then(setKpis)
-      .catch(() => setKpis([]))
+      .then((list) => {
+        if (list.length === 0) {
+          setBatch([])
+          return
+        }
+        cachedBatch(`compute:${selected}`, () => computeAllKpis(selected))
+          .then((resp) => {
+            setBatch(resp.results)
+            setFailures(resp.failures.map((f) => `${f.kpi_id.slice(0, 8)}…: ${f.error}`))
+          })
+          .catch((err) => {
+            setBatch([])
+            setError(String(err))
+          })
+      })
+      .catch(() => setBatch([]))
   }, [selected])
 
   const handleDiscover = async () => {
     if (!selected) return
     setDiscovering(true)
     setError(null)
+    setFailures([])
+    setBatch([])
+    setDetail(null)
     try {
-      setKpis(await discoverKpis(selected))
+      await discoverKpis(selected)
+      invalidateDataset(selected)
+      setComputing(true)
+      const resp = await computeAllKpis(selected)
+      setBatch(resp.results)
+      setFailures(resp.failures.map((f) => `${f.kpi_id.slice(0, 8)}…: ${f.error}`))
     } catch (err) {
       setError(String(err))
     } finally {
       setDiscovering(false)
+      setComputing(false)
     }
   }
 
   // Sorted by materiality descending — most material movement first (default).
-  const sortedKpis = useMemo(
-    () => [...kpis].sort((a, b) => (b.materiality ?? 0) - (a.materiality ?? 0)),
-    [kpis],
+  const sortedResults = useMemo(
+    () =>
+      [...batch].sort(
+        (a, b) => (b.definition.materiality ?? 0) - (a.definition.materiality ?? 0),
+      ),
+    [batch],
   )
 
-  const openDetail = async (kpi: KpiInfo) => {
-    setLoadingDetail(true)
-    setError(null)
-    try {
-      const resp = await computeKpi(kpi.kpi_id)
-      setDetail({ definition: resp.definition, computation: resp.computation })
-    } catch (err) {
-      setError(String(err))
-    } finally {
-      setLoadingDetail(false)
-    }
-  }
+  const computingAll = discovering || computing
+  const computedCount = batch.filter((r) => r.computation !== null).length
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -172,10 +191,10 @@ export default function KpiDashboardPage() {
         <h2 className="text-base font-semibold text-gray-800">KPI dashboard</h2>
         <p className="mt-1 text-sm text-gray-500">
           Discover KPIs from a canonical dataset's semantic contract, validate them, and
-          compute value / trend / baseline / benchmark / confidence interval.
-          
+          compute value / trend / baseline / benchmark / confidence interval — all in one
+          operation.
         </p>
-        <div className="mt-3 flex items-center gap-3">
+        <div className="mt-3 flex flex-wrap items-center gap-3">
           <select
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
@@ -192,31 +211,65 @@ export default function KpiDashboardPage() {
           </select>
           <button
             onClick={handleDiscover}
-            disabled={discovering || !selected}
+            disabled={computingAll || !selected}
             className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
           >
-            {discovering ? 'Discovering…' : 'Discover KPIs'}
+            {discovering
+              ? 'Discovering…'
+              : computing
+                ? 'Computing all KPIs…'
+                : 'Discover KPIs'}
           </button>
+          {computingAll && (
+            <span className="text-sm text-gray-400">
+              {discovering
+                ? 'Discovering KPIs…'
+                : `Computing ${computedCount}/${batch.length || '…'} KPIs…`}
+            </span>
+          )}
+          {!computingAll && batch.length > 0 && (
+            <span className="text-sm text-green-600">
+              {computedCount}/{batch.length} KPIs calculated
+            </span>
+          )}
         </div>
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+        {failures.length > 0 && (
+          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3">
+            <p className="text-sm font-medium text-amber-800">
+              {failures.length} KPI{failures.length > 1 ? 's' : ''} failed to compute:
+            </p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-amber-700">
+              {failures.map((f, i) => (
+                <li key={i}>{f}</li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
-      {kpis.length > 0 && (
+      {batch.length > 0 && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {sortedKpis.map((kpi) => (
+          {sortedResults.map((r) => (
             <button
-              key={kpi.kpi_id}
-              onClick={() => openDetail(kpi)}
-              className="rounded-lg border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:border-indigo-300 hover:shadow"
+              key={r.kpi_id}
+              onClick={() => r.computation && setDetail(r)}
+              className={`rounded-lg border border-gray-200 bg-white p-4 text-left shadow-sm transition ${
+                r.computation ? 'hover:border-indigo-300 hover:shadow' : 'opacity-70'
+              }`}
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="truncate text-sm font-semibold text-gray-800">
-                  {kpi.name}
+                  {r.definition.name}
                 </span>
                 <span
-                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[kpi.status].badge}`}
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+                    r.error
+                      ? 'bg-red-100 text-red-700'
+                      : STATUS_STYLES[r.definition.status].badge
+                  }`}
                 >
-                  {STATUS_STYLES[kpi.status].label}
+                  {r.error ? 'Failed' : STATUS_STYLES[r.definition.status].label}
                 </span>
               </div>
               <div className="mt-2 flex items-center justify-between">
@@ -224,19 +277,24 @@ export default function KpiDashboardPage() {
                   className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700"
                   title="Materiality score: statistical significance x business impact"
                 >
-                  M {kpi.materiality?.toFixed(1) ?? '0.0'}
+                  M {r.definition.materiality?.toFixed(1) ?? '0.0'}
                 </span>
-                <span className="text-xs text-gray-400">
-                  latest {kpi.status === 'invalid' ? '—' : 'value'}
+                <span className="text-xs font-medium text-gray-700">
+                  latest{' '}
+                  {r.computation?.value !== null && r.computation
+                    ? fmt(r.computation.value)
+                    : r.error
+                      ? '— (failed)'
+                      : '…'}
                 </span>
               </div>
-              <p className="mt-1 line-clamp-2 text-xs text-gray-500">{kpi.reason}</p>
+              <p className="mt-1 line-clamp-2 text-xs text-gray-500">{r.definition.reason}</p>
             </button>
           ))}
         </div>
       )}
 
-      {detail && (
+      {detail && detail.computation && (
         <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
           <div className="flex items-start justify-between">
             <div>
@@ -264,11 +322,7 @@ export default function KpiDashboardPage() {
             </button>
           </div>
           <div className="mt-4">
-            {loadingDetail ? (
-              <p className="text-sm text-gray-400">Computing…</p>
-            ) : (
-              <KpiChart computation={detail.computation} />
-            )}
+            <KpiChart computation={detail.computation} />
           </div>
         </div>
       )}

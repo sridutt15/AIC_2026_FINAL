@@ -112,6 +112,72 @@ def _store_finding(
     }
 
 
+@router.post("/run-all/{dataset_id}")
+def run_all_for_dataset(dataset_id: str, current_user: dict = Depends(get_current_user)) -> dict:
+    """Run driver decomposition on every computable KPI, one batch.
+
+    Per-KPI failures (e.g. waterfall abstention on high-cardinality
+    dimensions) are reported per item and never fatal to the batch.
+    """
+    user_id = current_user["user_id"]
+    conn = get_connection()
+    try:
+        dataset = conn.execute(
+            "SELECT dataset_id FROM canonical_datasets "
+            "WHERE dataset_id = ? AND user_id = ?",
+            (dataset_id, user_id),
+        ).fetchone()
+        if dataset is None:
+            raise not_found(f"Canonical dataset {dataset_id}")
+        rows = conn.execute(
+            "SELECT kpi_id, definition_json FROM kpis "
+            "WHERE dataset_id = ? AND user_id = ?",
+            (dataset_id, user_id),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    results, failures = [], []
+    for row in rows:
+        definition = json.loads(row["definition_json"])
+        if definition.get("status") == "invalid":
+            continue
+        try:
+            # Driver decomposition reads the computed trend — auto-compute
+            # any KPI that hasn't been computed yet.
+            from app.api.kpi import compute as compute_kpi
+            compute_kpi(row["kpi_id"], current_user)
+            resp = get_drivers(row["kpi_id"], current_user=current_user)
+            results.append({
+                "kpi_id": row["kpi_id"],
+                "definition": resp["definition"],
+                "total_movement": resp.get("total_movement"),
+                "before": resp.get("before"),
+                "after": resp.get("after"),
+                "findings": resp.get("findings", []),
+                "error": None,
+            })
+        except Exception as exc:
+            results.append({
+                "kpi_id": row["kpi_id"],
+                "definition": definition,
+                "total_movement": None,
+                "before": None,
+                "after": None,
+                "findings": [],
+                "error": str(exc),
+            })
+            failures.append({"kpi_id": row["kpi_id"], "error": str(exc)})
+
+    return {
+        "dataset_id": dataset_id,
+        "processed": len(results) - len(failures),
+        "failed": len(failures),
+        "failures": failures,
+        "results": results,
+    }
+
+
 @router.get("/{kpi_id}")
 def get_drivers(kpi_id: str, refresh: bool = False, current_user: dict = Depends(get_current_user)) -> dict:
     """Decompose the KPI's latest movement across all contract dimensions.

@@ -119,6 +119,68 @@ def _build_anomaly_findings(
     return findings
 
 
+@router.post("/run-all/{dataset_id}")
+def run_all_for_dataset(dataset_id: str, current_user: dict = Depends(get_current_user)) -> dict:
+    """Run anomaly detection on every computable KPI in a dataset, one batch.
+
+    Per-KPI failures are reported and never fatal. Cached detections are
+    reused (the per-KPI endpoint already caches in `anomalies`).
+    """
+    from app.api.kpi import _load_dataset_row
+
+    user_id = current_user["user_id"]
+    _load_dataset_row(dataset_id, user_id)  # ownership gate
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT kpi_id, definition_json FROM kpis "
+            "WHERE dataset_id = ? AND user_id = ?",
+            (dataset_id, user_id),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    results, failures = [], []
+    for row in rows:
+        definition = json.loads(row["definition_json"])
+        if definition.get("status") == "invalid":
+            continue
+        try:
+            # Anomaly detection runs on the computed trend — auto-compute any
+            # KPI that hasn't been computed yet (batch workflow requirement).
+            from app.api.kpi import compute as compute_kpi
+            compute_kpi(row["kpi_id"], current_user)
+            resp = get_anomalies(row["kpi_id"], current_user=current_user)
+            results.append({
+                "kpi_id": row["kpi_id"],
+                "definition": resp["definition"],
+                "anomalies": resp["anomalies"],
+                "findings": resp.get("findings", []),
+                "cached": resp.get("cached", False),
+                "detected_at": resp.get("detected_at"),
+                "error": None,
+            })
+        except Exception as exc:
+            results.append({
+                "kpi_id": row["kpi_id"],
+                "definition": definition,
+                "anomalies": None,
+                "findings": [],
+                "cached": False,
+                "detected_at": None,
+                "error": str(exc),
+            })
+            failures.append({"kpi_id": row["kpi_id"], "error": str(exc)})
+
+    return {
+        "dataset_id": dataset_id,
+        "processed": len(results) - len(failures),
+        "failed": len(failures),
+        "failures": failures,
+        "results": results,
+    }
+
+
 @router.get("/{kpi_id}")
 def get_anomalies(kpi_id: str, refresh: bool = False, current_user: dict = Depends(get_current_user)) -> dict:
     """Run detectors on the KPI's computed trend; return + cache per KPI.

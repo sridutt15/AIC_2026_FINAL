@@ -10,13 +10,14 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { listDatasets, listKpis } from '../api/kpi'
-import { getDrivers } from '../api/drivers'
-import type { DriverFinding, DriversResponse } from '../types'
+import { listDatasets } from '../api/kpi'
+import { runAllDrivers } from '../api/drivers'
+import { cachedBatch } from '../api/batchCache'
+import type { BatchDriverResult, DatasetListEntry } from '../types'
 import EvidencePanel from '../components/EvidencePanel'
 import ConfidenceBadge, { AbstainCard } from '../components/ConfidenceBadge'
 
-function isAbstained(f: DriverFinding): boolean {
+function isAbstained(f: BatchDriverResult['findings'][number]): boolean {
   return (f.finding as unknown as { abstained?: boolean }).abstained === true
 }
 
@@ -28,14 +29,14 @@ function fmt(value: number | null | undefined): string {
 }
 
 export default function DriversPage() {
-  const [datasets, setDatasets] = useState<{ dataset_id: string; name?: string | null }[]>([])
+  const [datasets, setDatasets] = useState<DatasetListEntry[]>([])
   const [datasetId, setDatasetId] = useState('')
-  const [kpis, setKpis] = useState<{ kpi_id: string; name: string; status: string; materiality?: number }[]>([])
-  const [kpiId, setKpiId] = useState('')
-  const [drivers, setDrivers] = useState<DriversResponse | null>(null)
-  const [selectedFinding, setSelectedFinding] = useState<DriverFinding | null>(null)
+  const [results, setResults] = useState<BatchDriverResult[]>([])
+  const [selectedKpiId, setSelectedKpiId] = useState('')
+  const [selectedFinding, setSelectedFinding] = useState<BatchDriverResult['findings'][number] | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [failures, setFailures] = useState<string[]>([])
 
   useEffect(() => {
     listDatasets()
@@ -46,31 +47,33 @@ export default function DriversPage() {
       .catch((err) => setError(String(err)))
   }, [])
 
+  // Sidebar navigation is the trigger: opening this page runs the driver
+  // decomposition for every computable KPI in one batch (cached per dataset).
   useEffect(() => {
     if (!datasetId) return
-    setKpiId('')
-    setKpis([])
-    setDrivers(null)
-    listKpis(datasetId)
-      .then((list) => {
-        const computable = list.filter((k) => k.status !== 'invalid')
-        setKpis(computable)
-        if (computable.length > 0) setKpiId(computable[0].kpi_id)
+    setError(null)
+    setFailures([])
+    setSelectedKpiId('')
+    setSelectedFinding(null)
+    setLoading(true)
+    cachedBatch(`drivers:${datasetId}`, () => runAllDrivers(datasetId))
+      .then((resp) => {
+        setResults(resp.results)
+        setFailures(resp.failures.map((f) => `${f.kpi_id.slice(0, 8)}…: ${f.error}`))
+        const firstOk = resp.results.find((r) => !r.error && r.findings.some((f) => !isAbstained(f)))
+          ?? resp.results.find((r) => !r.error)
+        if (firstOk) setSelectedKpiId(firstOk.kpi_id)
       })
-      .catch((err) => setError(String(err)))
+      .catch((err) => {
+        setResults([])
+        setError(String(err))
+      })
+      .finally(() => setLoading(false))
   }, [datasetId])
 
-  useEffect(() => {
-    if (!kpiId) return
-    setLoading(true)
-    setError(null)
-    getDrivers(kpiId, false)
-      .then(setDrivers)
-      .catch((err) => setError(String(err)))
-      .finally(() => setLoading(false))
-  }, [kpiId])
+  const selected = results.find((r) => r.kpi_id === selectedKpiId) ?? null
 
-  const topFinding = drivers?.findings.find((f) => !isAbstained(f)) ?? null
+  const topFinding = selected?.findings.find((f) => !isAbstained(f)) ?? null
 
   const chartData = useMemo(() => {
     if (!topFinding) return []
@@ -92,8 +95,9 @@ export default function DriversPage() {
       <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <h2 className="text-base font-semibold text-gray-800">Driver analysis</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Waterfall decomposition of the latest period-over-period movement — slice
-          contributions reconcile to the total. Every finding carries traceable evidence.
+          Opening this page runs the waterfall decomposition for every computable KPI in
+          the dataset in one operation — slice contributions reconcile to the total, every
+          finding carries traceable evidence.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <select
@@ -110,48 +114,87 @@ export default function DriversPage() {
               </option>
             ))}
           </select>
-          <select
-            value={kpiId}
-            onChange={(e) => setKpiId(e.target.value)}
-            className="block max-w-md flex-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
-          >
-            <option value="" disabled>
-              KPI…
-            </option>
-            {kpis.map((k) => (
-              <option key={k.kpi_id} value={k.kpi_id}>
-                {k.name}
-                {k.materiality !== undefined ? ` (M ${k.materiality.toFixed(1)})` : ''}
+          {results.filter((r) => !r.error).length > 1 && (
+            <select
+              value={selectedKpiId}
+              onChange={(e) => {
+                setSelectedKpiId(e.target.value)
+                setSelectedFinding(null)
+              }}
+              className="block max-w-md flex-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+            >
+              <option value="" disabled>
+                KPI…
               </option>
-            ))}
-          </select>
-          {loading && <span className="text-sm text-gray-400">Decomposing…</span>}
+              {results
+                .filter((r) => !r.error)
+                .map((r) => (
+                  <option key={r.kpi_id} value={r.kpi_id}>
+                    {r.definition.name}
+                  </option>
+                ))}
+            </select>
+          )}
+          {loading && (
+            <span className="text-sm text-gray-400">Decomposing all KPIs…</span>
+          )}
+          {!loading && results.length > 0 && (
+            <span className="text-sm text-green-600">
+              {results.filter((r) => !r.error).length}/{results.length} KPIs processed
+            </span>
+          )}
         </div>
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+        {failures.length > 0 && (
+          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3">
+            <p className="text-sm font-medium text-amber-800">
+              {failures.length} KPI{failures.length > 1 ? 's' : ''} failed during decomposition:
+            </p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-amber-700">
+              {failures.map((f, i) => (
+                <li key={i}>{f}</li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
-      {drivers && topFinding && (
+      {!loading && results.length === 0 && !error && (
+        <p className="rounded-lg border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+          No computable KPIs for this dataset — discover KPIs first on the KPIs page.
+        </p>
+      )}
+
+      {selected && topFinding && (
         <>
           <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-800">
-                {drivers.definition.name} — movement by{' '}
+                {selected.definition.name} — movement by{' '}
                 <span className="text-indigo-600">{topFinding.finding.dimension}</span>
                 {topFinding.confidence && <ConfidenceBadge confidence={topFinding.confidence} />}
               </h3>
               <div className="flex flex-wrap gap-3 text-xs text-gray-500">
-                <span>
-                  {drivers.before.period.slice(0, 10)}: <b className="text-gray-800">{fmt(drivers.before.value)}</b>
-                </span>
-                <span>
-                  {drivers.after.period.slice(0, 10)}: <b className="text-gray-800">{fmt(drivers.after.value)}</b>
-                </span>
-                <span>
-                  total movement:{' '}
-                  <b className={drivers.total_movement >= 0 ? 'text-green-600' : 'text-red-600'}>
-                    {fmt(drivers.total_movement)}
-                  </b>
-                </span>
+                {selected.before && (
+                  <span>
+                    {selected.before.period.slice(0, 10)}:{' '}
+                    <b className="text-gray-800">{fmt(selected.before.value)}</b>
+                  </span>
+                )}
+                {selected.after && (
+                  <span>
+                    {selected.after.period.slice(0, 10)}:{' '}
+                    <b className="text-gray-800">{fmt(selected.after.value)}</b>
+                  </span>
+                )}
+                {selected.total_movement !== null && (
+                  <span>
+                    total movement:{' '}
+                    <b className={(selected.total_movement ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}>
+                      {fmt(selected.total_movement)}
+                    </b>
+                  </span>
+                )}
                 <span className={reconciles ? 'text-green-600' : 'text-amber-600'}>
                   {reconciles ? '✓ slices reconcile to total' : 'residual present'}
                 </span>
@@ -191,7 +234,7 @@ export default function DriversPage() {
             </div>
 
             <div className="mt-2 flex flex-wrap gap-2">
-              {drivers.findings.map((f) =>
+              {selected.findings.map((f) =>
                 isAbstained(f) ? (
                   <span
                     key={f.finding_id}
@@ -221,9 +264,9 @@ export default function DriversPage() {
             </div>
           </div>
 
-          {drivers.findings.some(isAbstained) && (
+          {selected.findings.some(isAbstained) && (
             <div className="space-y-3">
-              {drivers.findings
+              {selected.findings
                 .filter(isAbstained)
                 .map((f) => (
                   <AbstainCard
@@ -237,13 +280,13 @@ export default function DriversPage() {
         </>
       )}
 
-      {drivers && !topFinding && drivers.findings.length > 0 && (
+      {selected && !topFinding && selected.findings.length > 0 && (
         <div className="space-y-3">
           <p className="text-sm text-gray-500">
             All driver findings for this KPI abstained — evidence is too weak or
             contradictory to draw a conclusion.
           </p>
-          {drivers.findings
+          {selected.findings
             .filter(isAbstained)
             .map((f) => (
               <AbstainCard

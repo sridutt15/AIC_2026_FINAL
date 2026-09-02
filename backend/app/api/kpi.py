@@ -249,6 +249,58 @@ def list_kpis(dataset_id: str, current_user: dict = Depends(get_current_user)) -
     }
 
 
+@router.post("/compute-all/{dataset_id}")
+def compute_all(dataset_id: str, current_user: dict = Depends(get_current_user)) -> dict:
+    """Compute every computable KPI in a dataset in one batch (Phase 18+).
+
+    Skips invalid KPIs; per-KPI failures are reported, never fatal to the
+    batch. Cached computations are reused (no duplicate work).
+    """
+    user_id = current_user["user_id"]
+    dataset = _load_dataset_row(dataset_id, user_id)
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT kpi_id, definition_json FROM kpis "
+            "WHERE dataset_id = ? AND user_id = ?",
+            (dataset_id, user_id),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    results, failures = [], []
+    for row in rows:
+        definition = json.loads(row["definition_json"])
+        if definition.get("status") == "invalid":
+            continue
+        try:
+            computed = compute(row["kpi_id"], current_user)
+            results.append({
+                "kpi_id": row["kpi_id"],
+                "definition": computed["definition"],
+                "computation": computed["computation"],
+                "cached": computed.get("cached", False),
+                "error": None,
+            })
+        except Exception as exc:  # partial failure: record and continue
+            results.append({
+                "kpi_id": row["kpi_id"],
+                "definition": definition,
+                "computation": None,
+                "cached": False,
+                "error": str(exc),
+            })
+            failures.append({"kpi_id": row["kpi_id"], "error": str(exc)})
+
+    return {
+        "dataset_id": dataset_id,
+        "computed": len(results) - len(failures),
+        "failed": len(failures),
+        "failures": failures,
+        "results": results,
+    }
+
+
 @router.get("/{kpi_id}/compute")
 def compute(kpi_id: str, current_user: dict = Depends(get_current_user)) -> dict:
     """Compute (and cache) a KPI's value/trend/baseline/benchmark/CI."""
