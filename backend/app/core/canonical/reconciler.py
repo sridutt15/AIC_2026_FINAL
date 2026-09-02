@@ -252,16 +252,33 @@ def align_grain(df: pd.DataFrame, from_cadence: str, to_cadence: str) -> pd.Data
 def reconcile(sources: list, join_keys: dict, target_cadence: str | None = None) -> pd.DataFrame:
     """Merge 2+ aligned sources into one canonical table.
 
+    SINGLE-SOURCE CASE (Phase 19, explicit early return, separate from the
+    multi-source path below): when `sources` contains exactly one DataFrame,
+    return it directly, UNCHANGED — no grain alignment (there is no other
+    cadence to align against), no join logic (nothing to join), no copy of
+    the data transformation pipeline. A single source IS its own canonical
+    dataset as-is.
+
+    MULTI-SOURCE CASE (2+): behavior is unchanged from Phase 4 — grain
+    alignment to the common target cadence, then the left-join chain on the
+    user-supplied join keys.
+
     Args:
         sources: list of {"df": DataFrame, "cadence": str} in join order.
         join_keys: common-key -> {source_index: column_name} mapping, e.g.
             {"date": {0: "date", 1: "order_date"}, "region": {0: "region", 1: "region_code"}}.
+            Ignored entirely in the single-source case (nothing to map).
         target_cadence: optional explicit target; defaults to the FINEST cadence
-            among the sources (least aggregation loss).
+            among the sources (least aggregation loss). Ignored in the
+            single-source case (no alignment happens).
 
     Deterministic: left-join chain in the given source order, keys renamed to the
     common key names, suffix-free (non-key, overlapping columns get "_s{i}").
     """
+    if len(sources) == 1:
+        # Single source: its data is already canonical. No alignment, no join.
+        return sources[0]["df"].copy()
+
     if len(sources) < 2:
         raise ValueError("reconcile needs at least two sources.")
 

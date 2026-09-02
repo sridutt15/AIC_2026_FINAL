@@ -130,9 +130,10 @@ def test_reconcile_left_join_missing_budget_stays_null():
     assert float(north["budget"].iloc[7]) == 700.0
 
 
-def test_reconcile_requires_two_sources():
+def test_reconcile_zero_sources_rejected():
+    """Zero sources is the only invalid arity now (Phase 19)."""
     with pytest.raises(ValueError):
-        reconcile([{"df": _daily_df(), "cadence": "Daily"}], {"date": {0: "date", 1: "date"}})
+        reconcile([], {"date": {0: "date", 1: "date"}})
 
 
 def test_reconcile_overlapping_nonkey_columns_dropped_from_secondary():
@@ -193,3 +194,32 @@ def test_reconcile_renames_source0_keys_too():
     north_jan1 = canonical[(canonical["geo"] == "north") & (canonical["day"] == "2024-01-01")]
     assert float(north_jan1["revenue"].iloc[0]) == 10.0
     assert float(north_jan1["budget"].iloc[0]) == 700.0
+
+
+def test_reconcile_single_source_returns_df_unchanged():
+    """Phase 19: one source = its own canonical dataset, returned as-is.
+
+    No grain alignment and no join logic may be applied — same rows, same
+    values, same columns (order included).
+    """
+    df = pd.DataFrame(
+        {
+            "date": ["2026-01-01", "2026-01-02", "2026-01-03"],
+            "region": ["A", "B", "A"],
+            "revenue": [100.0, 250.5, 42.25],
+            "orders": [10, 25, 4],
+        }
+    )
+    # Cadence deliberately coarser than needed: alignment must STILL not run.
+    result = reconcile([{"df": df, "cadence": "Weekly"}], join_keys={})
+    assert len(result) == len(df)
+    assert list(result.columns) == list(df.columns)
+    pd.testing.assert_frame_equal(result, df)  # values identical, no transforms
+
+    # join_keys supplied but irrelevant — still ignored entirely.
+    result_with_keys = reconcile(
+        [{"df": df, "cadence": "Daily"}],
+        join_keys={"date": {0: "date"}},
+        target_cadence="Monthly",
+    )
+    pd.testing.assert_frame_equal(result_with_keys, df)

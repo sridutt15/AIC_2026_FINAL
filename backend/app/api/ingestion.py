@@ -36,6 +36,29 @@ def canonical_file_path(user_id: str, dataset_id: str) -> str:
     return f"{user_id}/canonical/{dataset_id}.csv"
 
 
+def _dataset_storage_path(user_id: str, dataset_id: str) -> str:
+    """A dataset's storage object: the stored reference if the row carries one
+    (Phase 19 single-source datasets point at the original upload; deleting
+    the source deletes that object here), else the canonical CSV path."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT join_config_json FROM canonical_datasets "
+            "WHERE dataset_id = ? AND user_id = ?",
+            (dataset_id, user_id),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is not None:
+        try:
+            stored = json.loads(row["join_config_json"]).get("storage_path")
+            if stored:
+                return stored
+        except (ValueError, TypeError):
+            pass
+    return canonical_file_path(user_id, dataset_id)
+
+
 @router.post("/upload")
 def upload_source(
     file: UploadFile = File(...),
@@ -200,7 +223,7 @@ def delete_source(source_id: str, current_user: dict = Depends(get_current_user)
         pass  # missing file is fine
     for dataset_id in dataset_ids:
         try:
-            storage.delete_file(canonical_file_path(user_id, dataset_id))
+            storage.delete_file(_dataset_storage_path(user_id, dataset_id))
         except Exception:
             pass
 

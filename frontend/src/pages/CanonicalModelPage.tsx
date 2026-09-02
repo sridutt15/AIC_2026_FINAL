@@ -129,15 +129,22 @@ export default function CanonicalModelPage() {
     })
   }
 
+  const singleSource = selected.length === 1
+
   const handleBuild = async () => {
-    if (selected.length < 2) {
-      setError('Select at least two sources.')
+    if (selected.length < 1) {
+      setError('Select at least one source.')
       return
     }
     setBuilding(true)
     setError(null)
     try {
-      const result = await buildCanonical(selected, joinKeys, targetCadence || null)
+      // Single source: no join keys apply — its data is used directly.
+      const result = await buildCanonical(
+        selected,
+        singleSource ? null : joinKeys,
+        targetCadence || null,
+      )
       setBuilt(result)
       refreshDatasets()
     } catch (err) {
@@ -165,9 +172,16 @@ export default function CanonicalModelPage() {
       <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <h2 className="text-base font-semibold text-gray-800">Canonical model</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Merge 2+ sources into one canonical dataset with explicit, traceable reconciliation
-          rules (downsample = sum/mean; upsample = forward-fill LOCF).
+          Use a single source directly (no merge needed) or merge 2+ sources into one
+          canonical dataset with explicit, traceable reconciliation rules (downsample =
+          sum/mean; upsample = forward-fill LOCF).
         </p>
+        {sources.length === 1 && (
+          <p className="mt-2 rounded-md bg-indigo-50 px-3 py-2 text-sm text-indigo-700">
+            You only have one data source — you can use it directly below, or upload
+            another file first if you&apos;d like to combine multiple sources.
+          </p>
+        )}
 
         <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide text-gray-500">
           1. Select sources
@@ -191,16 +205,25 @@ export default function CanonicalModelPage() {
           ))}
         </div>
 
-        <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide text-gray-500">
-          2. Join key mapping (common key → per-source column)
-        </h3>
-        <button
-          onClick={addJoinKey}
-          className="mt-2 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
-        >
-          + Add join key
-        </button>
-        <div className="mt-2 space-y-2">
+        {singleSource ? (
+          <p className="mt-4 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500">
+            One source selected — its data will be used directly, no merge and no join
+            keys needed.
+          </p>
+        ) : (
+          <>
+            <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              2. Join key mapping (common key → per-source column)
+            </h3>
+            <button
+              onClick={addJoinKey}
+              className="mt-2 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+            >
+              + Add join key
+            </button>
+          </>
+        )}
+        <div className={`mt-2 space-y-2 ${singleSource ? 'hidden' : ''}`}>
           {Object.entries(joinKeys).map(([commonKey, mapping]) => (
             <div key={commonKey} className="flex flex-wrap items-center gap-2">
               <input
@@ -240,29 +263,39 @@ export default function CanonicalModelPage() {
           ))}
         </div>
 
-        <div className="mt-4 flex items-center gap-3">
-          <div>
-            <label className="text-xs font-medium text-gray-600">Target cadence</label>
-            <select
-              value={targetCadence}
-              onChange={(e) => setTargetCadence(e.target.value)}
-              className="mt-1 block rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
-            >
-              {CADENCES.map((c) => (
-                <option key={c} value={c}>
-                  {c === '' ? '(auto: finest among sources)' : c}
-                </option>
-              ))}
-            </select>
+        {singleSource ? null : (
+          <div className="mt-4 flex items-center gap-3">
+            <div>
+              <label className="text-xs font-medium text-gray-600">Target cadence</label>
+              <select
+                value={targetCadence}
+                onChange={(e) => setTargetCadence(e.target.value)}
+                className="mt-1 block rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+              >
+                {CADENCES.map((c) => (
+                  <option key={c} value={c}>
+                    {c === '' ? '(auto: finest among sources)' : c}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-          <button
-            onClick={handleBuild}
-            disabled={building}
-            className="mt-5 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-          >
-            {building ? 'Building…' : 'Build'}
-          </button>
-        </div>
+        )}
+        <button
+          onClick={handleBuild}
+          disabled={building || selected.length === 0}
+          className={`mt-5 rounded-md px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${
+            singleSource
+              ? 'bg-emerald-600 hover:bg-emerald-700'
+              : 'bg-indigo-600 hover:bg-indigo-700'
+          }`}
+        >
+          {building
+            ? 'Building…'
+            : singleSource
+              ? 'Use This Source Directly'
+              : 'Build Canonical Dataset'}
+        </button>
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
         {notice && <p className="mt-3 text-sm text-green-700">{notice}</p>}
       </div>

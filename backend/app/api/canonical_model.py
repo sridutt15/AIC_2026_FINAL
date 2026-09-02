@@ -9,7 +9,7 @@ import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.api.ingestion import canonical_file_path
+from app.api.ingestion import canonical_file_path, source_file_path
 from app.api.profiling import load_source_dataframe
 from app.core.canonical.reconciler import align_grain, reconcile
 from app.core.storage import supabase_client as storage
@@ -24,8 +24,10 @@ PREVIEW_ROWS = 20
 
 class BuildRequest(BaseModel):
     source_ids: list[str]
-    # common_key -> {source_index (str, JSON keys are strings): column_name}
-    join_keys: dict[str, dict[str, str]]
+    # common_key -> {source_index (str, JSON keys are strings): column_name}.
+    # Optional: a single-source build has nothing to map, so join_keys may
+    # be omitted entirely (Phase 19).
+    join_keys: dict[str, dict[str, str]] | None = None
     target_cadence: str | None = None
 
 
@@ -54,9 +56,16 @@ def _auto_dataset_name(source_metas: list, target_cadence: str | None, user_id: 
     for meta in source_metas:
         stem = Path(meta["filename"]).stem.lower().replace(" ", "_").replace("-", "_")
         stems.append(stem)
-    base = "_and_".join(stems)
-    cadence = (target_cadence or "").strip().lower()
-    name = f"{base} ({cadence})" if cadence else base
+    # Single source (Phase 19): plain source-based name — no "_and_" merge
+    # implication, no join grain suffix from a merge that never happened.
+    # Grain still shown when the source declares one.
+    if len(stems) == 1:
+        cadence = (target_cadence or "").strip().lower()
+        name = f"{stems[0]} ({cadence})" if cadence else stems[0]
+    else:
+        base = "_and_".join(stems)
+        cadence = (target_cadence or "").strip().lower()
+        name = f"{base} ({cadence})" if cadence else base
 
     conn = get_connection()
     try:
@@ -81,17 +90,39 @@ def _load_source_df(source: dict, user_id: str) -> pd.DataFrame:
 
 
 def load_canonical_df(user_id: str, dataset_id: str) -> pd.DataFrame:
-    """Load a canonical dataset's CSV from Supabase Storage (memory-safe).
+    """Load a canonical dataset's data from Supabase Storage (memory-safe).
 
     The caller MUST have already verified the dataset belongs to user_id.
+    Single-source datasets reference their original upload's storage path
+    (Phase 19 — no duplicate copy); merged datasets live at the canonical
+    CSV path. The path is resolved from the stored join_config's
+    `storage_path`, falling back to the canonical path for legacy rows.
     A missing Storage object raises a clean not_found.
     """
     import tempfile
 
     from app.core.canonical.reconciler import load_canonical_csv as _safe_load
 
+    path = canonical_file_path(user_id, dataset_id)
+    conn = get_connection()
     try:
-        file_bytes = storage.download_file(canonical_file_path(user_id, dataset_id))
+        row = conn.execute(
+            "SELECT join_config_json FROM canonical_datasets "
+            "WHERE dataset_id = ? AND user_id = ?",
+            (dataset_id, user_id),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is not None:
+        try:
+            stored = json.loads(row["join_config_json"]).get("storage_path")
+            if stored:
+                path = stored
+        except (ValueError, TypeError):
+            pass
+
+    try:
+        file_bytes = storage.download_file(path)
     except HTTPException:
         raise
     except Exception as exc:
@@ -126,12 +157,20 @@ def _frame_to_records(df: pd.DataFrame) -> list:
 
 @router.post("/build")
 def build_canonical(req: BuildRequest, current_user: dict = Depends(get_current_user)) -> dict:
-    """Reconcile 2+ sources into a stored canonical dataset; return id + first 20 rows."""
+    """Build a canonical dataset from 1+ sources; return id + first 20 rows.
+
+    Single source (Phase 19): the source's data is used directly, no join
+    mapping required, and NO duplicate storage write — the dataset row
+    references the original upload's existing storage path. Two or more
+    sources: unchanged Phase 4 merge (grain alignment + left-join chain) and
+    a genuinely new derived CSV in Storage.
+    """
     user_id = current_user["user_id"]
-    if len(req.source_ids) < 2:
-        raise HTTPException(status_code=422, detail="Need at least two source_ids to reconcile.")
+    if len(req.source_ids) < 1:
+        raise HTTPException(status_code=422, detail="At least one source_id is required.")
     if len(set(req.source_ids)) != len(req.source_ids):
         raise HTTPException(status_code=422, detail="source_ids must be unique.")
+    single_source = len(req.source_ids) == 1
 
     sources_meta = []
     for idx, source_id in enumerate(req.source_ids):
@@ -141,12 +180,18 @@ def build_canonical(req: BuildRequest, current_user: dict = Depends(get_current_
         sources_meta.append(meta)
 
     # join_keys: {common: {source_index: col}} — pydantic gives str keys; map to int.
-    join_keys = {
-        common: {int(k): v for k, v in mapping.items()}
-        for common, mapping in req.join_keys.items()
-    }
-    if not join_keys:
-        raise HTTPException(status_code=422, detail="join_keys mapping is required.")
+    # Required (and used) only for the 2+ merge; a single source has nothing to map.
+    join_keys = {}
+    if not single_source:
+        if not req.join_keys:
+            raise HTTPException(
+                status_code=422,
+                detail="join_keys mapping is required for a multi-source merge.",
+            )
+        join_keys = {
+            common: {int(k): v for k, v in mapping.items()}
+            for common, mapping in req.join_keys.items()
+        }
 
     try:
         canonical_df = reconcile(
@@ -159,19 +204,30 @@ def build_canonical(req: BuildRequest, current_user: dict = Depends(get_current_
 
     dataset_id = str(uuid.uuid4())
     dataset_name = _auto_dataset_name(sources_meta, req.target_cadence, user_id)
-    csv_bytes = canonical_df.to_csv(index=False).encode()
-    try:
-        storage.upload_file(
-            canonical_file_path(user_id, dataset_id), csv_bytes, "text/csv", compress=True
+
+    if single_source:
+        # NO duplicate storage write: the dataset simply points at the
+        # original upload's existing storage object (same bytes already
+        # sitting under the source's own path).
+        dataset_storage_path = source_file_path(
+            user_id, sources_meta[0]["source_id"], sources_meta[0]["filename"]
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    else:
+        csv_bytes = canonical_df.to_csv(index=False).encode()
+        try:
+            storage.upload_file(
+                canonical_file_path(user_id, dataset_id), csv_bytes, "text/csv", compress=True
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
+        dataset_storage_path = canonical_file_path(user_id, dataset_id)
 
     created_at = datetime.now(timezone.utc).isoformat()
     join_config = {
         "source_ids": req.source_ids,
         "join_keys": req.join_keys,
         "target_cadence": req.target_cadence,
+        "storage_path": dataset_storage_path,
     }
     conn = get_connection()
     try:
@@ -283,12 +339,27 @@ def delete_canonical(dataset_id: str, current_user: dict = Depends(get_current_u
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT dataset_id FROM canonical_datasets "
+            "SELECT dataset_id, join_config_json FROM canonical_datasets "
             "WHERE dataset_id = ? AND user_id = ?",
             (dataset_id, user_id),
         ).fetchone()
         if row is None:
             raise not_found(f"Canonical dataset {dataset_id}")
+
+        # Resolve the dataset's storage object; single-source datasets
+        # REFERENCE the original upload (must NOT be deleted here), merged
+        # datasets own a derived CSV (deleted below).
+        storage_path = None
+        try:
+            stored = json.loads(row["join_config_json"]).get("storage_path") or ""
+            # Only delete objects under the user's own canonical/ prefix —
+            # a referenced source path belongs to the upload, not this dataset.
+            if stored.startswith(f"{user_id}/canonical/"):
+                storage_path = stored
+        except (ValueError, TypeError):
+            pass
+        if storage_path is None:
+            storage_path = canonical_file_path(user_id, dataset_id)  # legacy row
 
         kpi_ids = [
             r["kpi_id"]
@@ -313,7 +384,7 @@ def delete_canonical(dataset_id: str, current_user: dict = Depends(get_current_u
         conn.close()
 
     try:
-        storage.delete_file(canonical_file_path(user_id, dataset_id))
+        storage.delete_file(storage_path)
     except Exception:
         pass  # best-effort
 

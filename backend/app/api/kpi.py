@@ -272,6 +272,16 @@ def compute_all(dataset_id: str, current_user: dict = Depends(get_current_user))
     for row in rows:
         definition = json.loads(row["definition_json"])
         if definition.get("status") == "invalid":
+            # Invalid KPIs (e.g. no time axis -> degenerate trend) stay
+            # visible: the UI shows them badged with their reason instead
+            # of a blank screen. They are not computed, not failures.
+            results.append({
+                "kpi_id": row["kpi_id"],
+                "definition": definition,
+                "computation": None,
+                "cached": False,
+                "error": None,
+            })
             continue
         try:
             computed = compute(row["kpi_id"], current_user)

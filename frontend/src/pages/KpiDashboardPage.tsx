@@ -235,6 +235,11 @@ export default function KpiDashboardPage() {
           {!computingAll && batch.length > 0 && (
             <span className="text-sm text-green-600">
               {computedCount}/{batch.length} KPIs calculated
+              {batch.length - computedCount > 0 && (
+                <span className="ml-1 text-amber-600">
+                  ({batch.length - computedCount} not computable/failed)
+                </span>
+              )}
             </span>
           )}
         </div>
@@ -278,19 +283,30 @@ export default function KpiDashboardPage() {
                 </span>
               </div>
               <div className="mt-2 flex items-center justify-between">
-                <span
-                  className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700"
-                  title="Materiality score: statistical significance x business impact"
-                >
-                  M {r.definition.materiality?.toFixed(1) ?? '0.0'}
-                </span>
+                {r.definition.status === 'invalid' ? (
+                  <span
+                    className="truncate text-xs text-gray-400"
+                    title="This KPI cannot be computed from the data"
+                  >
+                    Not computable
+                  </span>
+                ) : (
+                  <span
+                    className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700"
+                    title="Materiality score: statistical significance x business impact"
+                  >
+                    M {r.definition.materiality?.toFixed(1) ?? '0.0'}
+                  </span>
+                )}
                 <span className="text-xs font-medium text-gray-700">
                   latest{' '}
                   {r.computation?.value !== null && r.computation
                     ? fmt(r.computation.value)
                     : r.error
                       ? '— (failed)'
-                      : '…'}
+                      : r.definition.status === 'invalid'
+                        ? '—'
+                        : '…'}
                 </span>
               </div>
               <p className="mt-1 line-clamp-2 text-xs text-gray-500">{r.definition.reason}</p>

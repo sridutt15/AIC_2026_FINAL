@@ -2,10 +2,11 @@ import { authFetch } from './authClient'
 import { API_BASE_URL } from './health'
 import type { CanonicalDatasetInfo } from '../types'
 
-/** POST /canonical/build — reconcile 2+ sources into a canonical dataset. */
+/** POST /canonical/build — 1+ sources into a canonical dataset (single source
+ * needs no join_keys: its data is used directly). */
 export async function buildCanonical(
   sourceIds: string[],
-  joinKeys: Record<string, Record<string, string>>,
+  joinKeys?: Record<string, Record<string, string>> | null,
   targetCadence?: string | null,
 ): Promise<CanonicalDatasetInfo> {
   const response = await authFetch(`${API_BASE_URL}/canonical/build`, {
@@ -13,7 +14,7 @@ export async function buildCanonical(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       source_ids: sourceIds,
-      join_keys: joinKeys,
+      join_keys: joinKeys ?? null,
       target_cadence: targetCadence ?? null,
     }),
   })
